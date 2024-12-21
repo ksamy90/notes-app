@@ -3,11 +3,13 @@ import { LiveReload, Scripts, Links } from '@remix-run/react'
 import faviconAssetUrl from './assets/favicon.svg'
 import { KCDShop } from './kcdshop.tsx'
 import fontStylesheetUrl from './styles/font.css'
+import tailWindStylesheetUrl from './styles/tailwind.css'
 
 export const links: LinksFunction = () => {
 	return [
 		{ rel: 'icon', type: 'image/svg+xml', href: faviconAssetUrl },
 		{ rel: 'stylesheet', href: fontStylesheetUrl },
+		{ rel: 'stylesheet', href: tailWindStylesheetUrl },
 	]
 }
 
@@ -18,7 +20,7 @@ export default function App() {
 				<Links />
 			</head>
 			<body>
-				<p>Hello World</p>
+				<p className="p-8 text-xl">Hello World</p>
 				<Scripts />
 				<KCDShop />
 				<LiveReload />
