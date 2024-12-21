@@ -1,10 +1,12 @@
 import { type LinksFunction } from '@remix-run/node'
 import { LiveReload, Scripts, Links } from '@remix-run/react'
+import faviconAssetUrl from './assets/favicon.svg'
 import { KCDShop } from './kcdshop.tsx'
 
 // use the LinksFunction type [TYPESCRIPT]
+// disable cache favicon
 export const links: LinksFunction = () => {
-	return [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }]
+	return [{ rel: 'icon', type: 'image/svg+xml', href: faviconAssetUrl }]
 }
 
 export default function App() {
