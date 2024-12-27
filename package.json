@@ -1,11 +1,6 @@
 {
-  "name": "notes-app",
+  "name": "exercises__sep__02.routing__sep__01.problem.routes",
   "private": true,
-  "kcd-workshop": {
-    "scripts": {
-      "test": "playwright test --trace=retain-on-failure"
-    }
-  },
   "sideEffects": false,
   "type": "module",
   "imports": {
