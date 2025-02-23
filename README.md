@@ -1,6 +1,6 @@
 Hello, my name is Samson. I'm here to show you about the awesome notes
 application, please get oriented with the repo as it's a full stack web app
-built in Remix and to give you an overview of how to build solid data fetching
+built in Remix and to give you an overview of how to setup solid data fetching
 and routing application different from the traditional Single Page setup with
 client side React only. I'm going to get a new project for note taking off the
 ground. We want people to write Epic Notes
