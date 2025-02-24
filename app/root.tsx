@@ -30,7 +30,6 @@ export async function loader() {
 }
 
 export default function App() {
-	console.log(ENV)
 	const data = useLoaderData<typeof loader>()
 	return (
 		<html lang="en" className="h-full overflow-x-hidden">
