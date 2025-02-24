@@ -1,3 +1,7 @@
+# 🔭 Full Stack React Engineering
+
+# 🦿 Web standards and modern web app UX
+
 Hello, my name is Samson. I'm here to show you about the awesome notes
 application, please get oriented with the repo as it's a full stack web app
 built in Remix and to give you an overview of how to setup solid data fetching
