@@ -14,6 +14,7 @@ import faviconAssetUrl from './assets/favicon.svg'
 import { KCDShop } from './kcdshop.tsx'
 import fontStylesheetUrl from './styles/font.css'
 import tailwindStylesheetUrl from './styles/tailwind.css'
+import { getEnv } from './utils/env.server.ts'
 
 export const links: LinksFunction = () => {
 	return [
@@ -25,10 +26,11 @@ export const links: LinksFunction = () => {
 }
 
 export async function loader() {
-	return json({ username: os.userInfo().username })
+	return json({ username: os.userInfo().username, ENV: getEnv() })
 }
 
 export default function App() {
+	console.log(ENV)
 	const data = useLoaderData<typeof loader>()
 	return (
 		<html lang="en" className="h-full overflow-x-hidden">
@@ -65,6 +67,11 @@ export default function App() {
 				</div>
 				<div className="h-5" />
 				<ScrollRestoration />
+				<script
+					dangerouslySetInnerHTML={{
+						__html: `window.ENV = ${JSON.stringify(data.ENV)}`,
+					}}
+				/>
 				<Scripts />
 				<KCDShop />
 				<LiveReload />
