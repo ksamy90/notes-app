@@ -50,8 +50,8 @@ export default function App() {
 								<div className="font-bold">notes</div>
 							</div>
 						</Link>
-						<Link className="underline" to="users/kody/notes">
-							Kody's Notes
+						<Link className="underline" to="users/samson/notes">
+							Samson's Notes
 						</Link>
 					</nav>
 				</header>
