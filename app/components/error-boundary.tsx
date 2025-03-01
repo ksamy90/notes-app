@@ -12,11 +12,14 @@ type StatusHandler = (info: {
 }) => JSX.Element | null
 
 export function GeneralErrorBoundary({
-	defaultStatusHandler = ({ error }) => (
-		<p>
-			{error.status} {error.data}
-		</p>
-	),
+	defaultStatusHandler = ({ error }) => {
+		console.log(error)
+		return (
+			<p>
+				{error.status} {error.data}
+			</p>
+		)
+	},
 	statusHandlers,
 	unexpectedErrorHandler = error => <p>{getErrorMessage(error)}</p>,
 }: {
