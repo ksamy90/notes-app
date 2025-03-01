@@ -13,7 +13,6 @@ type StatusHandler = (info: {
 
 export function GeneralErrorBoundary({
 	defaultStatusHandler = ({ error }) => {
-		console.log(error)
 		return (
 			<p>
 				{error.status} {error.data}
