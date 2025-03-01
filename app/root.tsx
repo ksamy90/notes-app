@@ -29,7 +29,6 @@ export const links: LinksFunction = () => {
 }
 
 export async function loader() {
-	throw new Error('root loader error')
 	return json({ username: os.userInfo().username, ENV: getEnv() })
 }
 
