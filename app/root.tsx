@@ -13,6 +13,7 @@ import {
 	useLoaderData,
 } from '@remix-run/react'
 import faviconAssetUrl from './assets/favicon.svg'
+import { GeneralErrorBoundary } from './components/error-boundary.tsx'
 import { KCDShop } from './kcdshop.tsx'
 import fontStylesheetUrl from './styles/font.css'
 import tailwindStylesheetUrl from './styles/tailwind.css'
@@ -28,11 +29,11 @@ export const links: LinksFunction = () => {
 }
 
 export async function loader() {
+	throw new Error('root loader error')
 	return json({ username: os.userInfo().username, ENV: getEnv() })
 }
 
-export default function App() {
-	const data = useLoaderData<typeof loader>()
+function Document({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="en" className="h-full overflow-x-hidden">
 			<head>
@@ -42,40 +43,8 @@ export default function App() {
 				<Links />
 			</head>
 			<body className="flex h-full flex-col justify-between bg-background text-foreground">
-				<header className="container mx-auto py-6">
-					<nav className="flex justify-between">
-						<Link to="/">
-							<div>
-								<div className="font-light">epic</div>
-								<div className="font-bold">notes</div>
-							</div>
-						</Link>
-						<Link className="underline" to="users/samson/notes">
-							Samson's Notes
-						</Link>
-					</nav>
-				</header>
-
-				<div className="flex-1">
-					<Outlet />
-				</div>
-
-				<div className="container mx-auto flex justify-between">
-					<Link to="/">
-						<div>
-							<div className="font-light">epic</div>
-							<div className="font-bold">notes</div>
-						</div>
-					</Link>
-					<p>Built with ♥️ by {data.username}</p>
-				</div>
-				<div className="h-5" />
+				{children}
 				<ScrollRestoration />
-				<script
-					dangerouslySetInnerHTML={{
-						__html: `window.ENV = ${JSON.stringify(data.ENV)}`,
-					}}
-				/>
 				<Scripts />
 				<KCDShop />
 				<LiveReload />
@@ -84,9 +53,64 @@ export default function App() {
 	)
 }
 
+export default function App() {
+	const data = useLoaderData<typeof loader>()
+	return (
+		<Document>
+			<header className="container mx-auto py-6">
+				<nav className="flex justify-between">
+					<Link to="/">
+						<div>
+							<div className="font-light">epic</div>
+							<div className="font-bold">notes</div>
+						</div>
+					</Link>
+					<Link className="underline" to="users/samson/notes">
+						Samson's Notes
+					</Link>
+				</nav>
+			</header>
+
+			<div className="flex-1">
+				<Outlet />
+			</div>
+
+			<div className="container mx-auto flex justify-between">
+				<Link to="/">
+					<div>
+						<div className="font-light">epic</div>
+						<div className="font-bold">notes</div>
+					</div>
+				</Link>
+				<p>Built with ♥️ by {data.username}</p>
+			</div>
+			<div className="h-5" />
+			<ScrollRestoration />
+			<script
+				dangerouslySetInnerHTML={{
+					__html: `window.ENV = ${JSON.stringify(data.ENV)}`,
+				}}
+			/>
+			<Scripts />
+			<KCDShop />
+			<LiveReload />
+		</Document>
+	)
+}
+
 export const meta: MetaFunction = () => {
 	return [
 		{ title: 'Epic Notes' },
 		{ name: 'description', content: 'awesome notes application' },
 	]
+}
+
+export function ErrorBoundary() {
+	return (
+		<Document>
+			<div className="flex-1">
+				<GeneralErrorBoundary />
+			</div>
+		</Document>
+	)
 }
