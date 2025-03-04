@@ -1,5 +1,6 @@
 import { json, redirect, type DataFunctionArgs } from '@remix-run/node'
 import { Form, useActionData, useLoaderData } from '@remix-run/react'
+import { useEffect, useState } from 'react'
 import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 
 import { floatingToolbarClassName } from '#app/components/floating-toolbar.tsx'
@@ -91,6 +92,12 @@ function ErrorList({ errors }: { errors?: Array<string> | null }) {
 	) : null
 }
 
+function useHydrated() {
+	const [hydrated, setHydrated] = useState(false)
+	useEffect(() => setHydrated(true), [])
+	return hydrated
+}
+
 export default function NoteEdit() {
 	const data = useLoaderData<typeof loader>()
 	const actionData = useActionData<typeof action>()
@@ -101,13 +108,14 @@ export default function NoteEdit() {
 		actionData?.status === 'error' ? actionData.errors.fieldErrors : null
 	const formErrors =
 		actionData?.status === 'error' ? actionData.errors.formErrors : null
+	const isHydrated = useHydrated()
 
 	return (
 		<div className="absolute inset-0">
 			<Form
 				id={formId}
+				noValidate={isHydrated}
 				method="POST"
-				noValidate
 				className="flex h-full flex-col gap-y-4 overflow-x-hidden px-10 pb-28 pt-12"
 			>
 				<div className="flex flex-col gap-1">
