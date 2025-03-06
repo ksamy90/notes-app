@@ -78,9 +78,15 @@ export async function action({ request, params }: DataFunctionArgs) {
 	return redirect(`/users/${params.username}/notes/${params.noteId}`)
 }
 
-function ErrorList({ errors }: { errors?: Array<string> | null }) {
+function ErrorList({
+	id,
+	errors,
+}: {
+	id?: string
+	errors?: Array<string> | null
+}) {
 	return errors?.length ? (
-		<ul className="flex flex-col gap-1">
+		<ul id={id} className="flex flex-col gap-1">
 			{errors.map((error, i) => {
 				return (
 					<li key={i} className="text-[10px] text-foreground-destructive">
@@ -141,7 +147,7 @@ export default function NoteEdit() {
 							autoFocus
 						/>
 						<div className="min-h-[32px] px-4 pb-3 pt-1">
-							<ErrorList errors={fieldErrors?.title} />
+							<ErrorList id={titleErrorId} errors={fieldErrors?.title} />
 						</div>
 					</div>
 					<div>
@@ -156,11 +162,11 @@ export default function NoteEdit() {
 							aria-describedby={contentErrorId}
 						/>
 						<div className="min-h-[32px] px-4 pb-3 pt-1">
-							<ErrorList errors={fieldErrors?.content} />
+							<ErrorList id={contentErrorId} errors={fieldErrors?.content} />
 						</div>
 					</div>
 				</div>
-				<ErrorList errors={formErrors} />
+				<ErrorList id={formErrorId} errors={formErrors} />
 			</Form>
 			<div className={floatingToolbarClassName}>
 				<Button form={formId} variant="destructive" type="reset">
