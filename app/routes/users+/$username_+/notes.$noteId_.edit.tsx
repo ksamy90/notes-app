@@ -1,6 +1,6 @@
 import { json, redirect, type DataFunctionArgs } from '@remix-run/node'
 import { Form, useActionData, useLoaderData } from '@remix-run/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 
 import { floatingToolbarClassName } from '#app/components/floating-toolbar.tsx'
@@ -108,6 +108,7 @@ export default function NoteEdit() {
 	const data = useLoaderData<typeof loader>()
 	const actionData = useActionData<typeof action>()
 	const isSubmitting = useIsSubmitting()
+	const formRef = useRef<HTMLFormElement>(null)
 	const formId = 'note-editor'
 
 	const fieldErrors =
@@ -123,6 +124,20 @@ export default function NoteEdit() {
 	const contentHasErrors = Boolean(fieldErrors?.content.length)
 	const contentErrorId = contentHasErrors ? 'content-error' : undefined
 
+	useEffect(() => {
+		const formEl = formRef.current
+		if (!formEl) return
+		if (actionData?.status !== 'error') return
+		if (formEl.matches('[aria-invalid="true"]')) {
+			formEl.focus()
+		} else {
+			const firstInvalid = formEl.querySelector('[aria-invalid="true"]')
+			if (firstInvalid instanceof HTMLElement) {
+				firstInvalid.focus()
+			}
+		}
+	}, [actionData])
+
 	return (
 		<div className="absolute inset-0">
 			<Form
@@ -132,6 +147,7 @@ export default function NoteEdit() {
 				className="flex h-full flex-col gap-y-4 overflow-x-hidden px-10 pb-28 pt-12"
 				aria-invalid={formHasErrors || undefined}
 				aria-describedby={formErrorId}
+				ref={formRef}
 			>
 				<div className="flex flex-col gap-1">
 					<div>
