@@ -4,10 +4,10 @@
 
 Hello, my name is Samson. I'm here to show you about the awesome notes
 application, please get oriented with the repo as it's a full stack web app
-built in Remix and to give you an overview of how to setup solid data fetching
-and routing application different from the traditional Single Page setup with
-client side React only. I'm going to get a new project for note taking off the
-ground. We want people to write Epic Notes
+built in Remix and to give you an overview of the data fetching and routing
+application different from the traditional Single Page setup with client side
+React only. I'm going to get a new project for note taking off the ground,
+reason is that I want people to write Epic Notes
 
 Users in this app have profile pages and can make notes. So, we want to have the
 following as example routes:
