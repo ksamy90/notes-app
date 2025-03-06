@@ -110,6 +110,13 @@ export default function NoteEdit() {
 		actionData?.status === 'error' ? actionData.errors.formErrors : null
 	const isHydrated = useHydrated()
 
+	const formHasErrors = Boolean(formErrors?.length)
+	const formErrorId = formHasErrors ? 'form-error' : undefined
+	const titleHasErrors = Boolean(fieldErrors?.title.length)
+	const titleErrorId = titleHasErrors ? 'title-error' : undefined
+	const contentHasErrors = Boolean(fieldErrors?.content.length)
+	const contentErrorId = contentHasErrors ? 'content-error' : undefined
+
 	return (
 		<div className="absolute inset-0">
 			<Form
@@ -117,6 +124,8 @@ export default function NoteEdit() {
 				noValidate={isHydrated}
 				method="POST"
 				className="flex h-full flex-col gap-y-4 overflow-x-hidden px-10 pb-28 pt-12"
+				aria-invalid={formHasErrors || undefined}
+				aria-describedby={formErrorId}
 			>
 				<div className="flex flex-col gap-1">
 					<div>
@@ -127,6 +136,9 @@ export default function NoteEdit() {
 							defaultValue={data.note.title}
 							required
 							maxLength={titleMaxLength}
+							aria-invalid={titleHasErrors || undefined}
+							aria-describedby={titleErrorId}
+							autoFocus
 						/>
 						<div className="min-h-[32px] px-4 pb-3 pt-1">
 							<ErrorList errors={fieldErrors?.title} />
@@ -140,6 +152,8 @@ export default function NoteEdit() {
 							defaultValue={data.note.content}
 							required
 							maxLength={contentMaxLength}
+							aria-invalid={contentHasErrors || undefined}
+							aria-describedby={contentErrorId}
 						/>
 						<div className="min-h-[32px] px-4 pb-3 pt-1">
 							<ErrorList errors={fieldErrors?.content} />
