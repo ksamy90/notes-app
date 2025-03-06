@@ -120,8 +120,9 @@ export default function NoteEdit() {
 			>
 				<div className="flex flex-col gap-1">
 					<div>
-						<Label>Title</Label>
+						<Label htmlFor="note-title">Title</Label>
 						<Input
+							id="note-title"
 							name="title"
 							defaultValue={data.note.title}
 							required
@@ -132,8 +133,9 @@ export default function NoteEdit() {
 						</div>
 					</div>
 					<div>
-						<Label>Content</Label>
+						<Label htmlFor="note-content">Content</Label>
 						<Textarea
+							id="note-content"
 							name="content"
 							defaultValue={data.note.content}
 							required
@@ -147,7 +149,7 @@ export default function NoteEdit() {
 				<ErrorList errors={formErrors} />
 			</Form>
 			<div className={floatingToolbarClassName}>
-				<Button variant="destructive" type="reset">
+				<Button form={formId} variant="destructive" type="reset">
 					Reset
 				</Button>
 				<StatusButton
