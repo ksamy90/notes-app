@@ -1,3 +1,4 @@
+import { parse } from '@conform-to/zod'
 import { json, redirect, type DataFunctionArgs } from '@remix-run/node'
 import { Form, useActionData, useLoaderData } from '@remix-run/react'
 import { useEffect, useRef, useState } from 'react'
@@ -44,20 +45,16 @@ export async function action({ request, params }: DataFunctionArgs) {
 	invariantResponse(params.noteId, 'noteId param is required')
 
 	const formData = await request.formData()
-	// 🐨 use the NoteEditorSchema.safeParse method to parse an object from the formData
-	// 💰 { title: formData.get('title'), content: formData.get('content') }
-	const result = NoteEditorSchema.safeParse({
-		title: formData.get('title'),
-		content: formData.get('content'),
+	const submission = parse(formData, {
+		schema: NoteEditorSchema,
 	})
 
-	if (!result.success) {
-		return json({ status: 'error', errors: result.error.flatten() } as const, {
+	if (!submission.value) {
+		return json({ status: 'error', submission } as const, {
 			status: 400,
 		})
 	}
-
-	const { title, content } = result.data
+	const { title, content } = submission.value
 	await updateNote({ id: params.noteId, title, content })
 	return redirect(`/users/${params.username}/notes/${params.noteId}`)
 }
@@ -72,7 +69,7 @@ function ErrorList({
 	return errors?.length ? (
 		<ul id={id} className="flex flex-col gap-1">
 			{errors.map((error, i) => (
-				<li key={i} className="text-[10px] text-foreground-danger">
+				<li key={i} className="text-[10px] text-foreground-destructive">
 					{error}
 				</li>
 			))}
@@ -94,17 +91,15 @@ export default function NoteEdit() {
 	const isSubmitting = useIsSubmitting()
 
 	const fieldErrors =
-		actionData?.status === 'error' ? actionData.errors.fieldErrors : null
+		actionData?.status === 'error' ? actionData.submission.error : null
 	const formErrors =
-		actionData?.status === 'error' ? actionData.errors.formErrors : null
+		actionData?.status === 'error' ? actionData.submission.error[''] : null
 	const isHydrated = useHydrated()
 
 	const formHasErrors = Boolean(formErrors?.length)
 	const formErrorId = formHasErrors ? 'form-error' : undefined
-	// 🐨 the title may be undefined on the fieldErrors, so add a ? after "title" here:
 	const titleHasErrors = Boolean(fieldErrors?.title?.length)
 	const titleErrorId = titleHasErrors ? 'title-error' : undefined
-	// 🐨 the content may be undefined on the fieldErrors, so add a ? after "content" here:
 	const contentHasErrors = Boolean(fieldErrors?.content?.length)
 	const contentErrorId = contentHasErrors ? 'content-error' : undefined
 
