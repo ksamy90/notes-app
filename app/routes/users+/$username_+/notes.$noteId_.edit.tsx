@@ -48,6 +48,14 @@ const MAX_UPLOAD_SIZE = 1024 * 1024 * 3 // 3MB
 const NoteEditorSchema = z.object({
 	title: z.string().max(titleMaxLength),
 	content: z.string().max(contentMaxLength),
+	imageId: z.string().optional(),
+	file: z
+		.instanceof(File)
+		.refine(file => {
+			return file.size <= MAX_UPLOAD_SIZE
+		}, 'File size must be less than 3MB')
+		.optional(),
+	altText: z.string().optional(),
 })
 
 export async function action({ request, params }: DataFunctionArgs) {
@@ -69,22 +77,13 @@ export async function action({ request, params }: DataFunctionArgs) {
 			status: 400,
 		})
 	}
-	const { title, content } = submission.value
+	const { title, content, file, imageId, altText } = submission.value
 
 	await updateNote({
 		id: params.noteId,
 		title,
 		content,
-		images: [
-			{
-				// @ts-expect-error
-				id: formData.get('imageid'),
-				// @ts-expect-error
-				file: formData.get('file'),
-				// @ts-expect-error
-				altText: formData.get('altText'),
-			},
-		],
+		images: [{ id: imageId, file, altText }],
 	})
 
 	return redirect(`/users/${params.username}/notes/${params.noteId}`)
