@@ -1,4 +1,9 @@
-import { conform, useForm } from '@conform-to/react'
+import {
+	conform,
+	type FieldConfig,
+	useFieldset,
+	useForm,
+} from '@conform-to/react'
 import { getFieldsetConstraint, parse } from '@conform-to/zod'
 import {
 	json,
@@ -8,7 +13,7 @@ import {
 	type DataFunctionArgs,
 } from '@remix-run/node'
 import { Form, useActionData, useLoaderData } from '@remix-run/react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { z } from 'zod'
 import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 import { floatingToolbarClassName } from '#app/components/floating-toolbar.tsx'
@@ -45,10 +50,9 @@ const contentMaxLength = 10000
 
 const MAX_UPLOAD_SIZE = 1024 * 1024 * 3 // 3MB
 
-const NoteEditorSchema = z.object({
-	title: z.string().max(titleMaxLength),
-	content: z.string().max(contentMaxLength),
-	imageId: z.string().optional(),
+// 🐨 make a ImageFieldsetSchema that's an object which has id, file, and altText
+const ImageFieldsetSchema = z.object({
+	id: z.string().optional(),
 	file: z
 		.instanceof(File)
 		.refine(file => {
@@ -58,12 +62,15 @@ const NoteEditorSchema = z.object({
 	altText: z.string().optional(),
 })
 
+const NoteEditorSchema = z.object({
+	title: z.string().max(titleMaxLength),
+	content: z.string().max(contentMaxLength),
+	image: ImageFieldsetSchema,
+})
+
 export async function action({ request, params }: DataFunctionArgs) {
 	invariantResponse(params.noteId, 'noteId param is required')
 
-	// 🐨 switch this for parseMultipartFormData and createMemoryUploadHandler
-	// 🐨 set the `maxPartSize` setting to 3MB (💰 1024 * 1024 * 3) to prevent
-	// 🐨 users from uploading files that are too large.
 	const formData = await parseMultipartFormData(
 		request,
 		createMemoryUploadHandler({ maxPartSize: MAX_UPLOAD_SIZE }),
@@ -77,13 +84,13 @@ export async function action({ request, params }: DataFunctionArgs) {
 			status: 400,
 		})
 	}
-	const { title, content, file, imageId, altText } = submission.value
+	const { title, content, image } = submission.value
 
 	await updateNote({
 		id: params.noteId,
 		title,
 		content,
-		images: [{ id: imageId, file, altText }],
+		images: [image],
 	})
 
 	return redirect(`/users/${params.username}/notes/${params.noteId}`)
@@ -122,6 +129,7 @@ export default function NoteEdit() {
 		defaultValue: {
 			title: data.note.title,
 			content: data.note.content,
+			image: data.note.images[0],
 		},
 	})
 
@@ -156,7 +164,7 @@ export default function NoteEdit() {
 					</div>
 					<div>
 						<Label>Image</Label>
-						<ImageChooser image={data.note.images[0]} />
+						<ImageChooser config={fields.image} />
 					</div>
 				</div>
 				<ErrorList id={form.errorId} errors={form.errors} />
@@ -179,23 +187,33 @@ export default function NoteEdit() {
 }
 
 function ImageChooser({
-	image,
+	config,
 }: {
-	image?: { id: string; altText?: string | null }
+	config: FieldConfig<z.infer<typeof ImageFieldsetSchema>>
 }) {
-	const existingImage = Boolean(image)
+	// 🐨 create a ref for the fieldset
+	// 🐨 create a conform fields object with useFieldset
+	const ref = useRef<HTMLFieldSetElement>(null)
+	const fields = useFieldset(ref, config)
+
+	// 🐨 the existingImage should now be based on whether fields.id.defaultValue is set
+	const existingImage = Boolean(fields.id.defaultValue)
 	const [previewImage, setPreviewImage] = useState<string | null>(
-		existingImage ? `/resources/images/${image?.id}` : null,
+		// 🐨 this should now reference fields.id.defaultValue
+		existingImage ? `/resources/images/${fields.id.defaultValue}` : null,
 	)
-	const [altText, setAltText] = useState(image?.altText ?? '')
+	// 🐨 this should now reference fields.altText.defaultValue
+	const [altText, setAltText] = useState(fields.altText.defaultValue ?? '')
 
 	return (
-		<fieldset>
+		// 🐨 pass the ref prop to fieldset
+		<fieldset ref={ref}>
 			<div className="flex gap-3">
 				<div className="w-32">
 					<div className="relative h-32 w-32">
 						<label
-							htmlFor="image-input"
+							// 🐨 update this htmlFor to reference fields.id.id
+							htmlFor={fields.file.id}
 							className={cn('group absolute h-32 w-32 rounded-lg', {
 								'bg-accent opacity-40 focus-within:opacity-100 hover:opacity-100':
 									!previewImage,
@@ -220,12 +238,13 @@ function ImageChooser({
 									➕
 								</div>
 							)}
-							{/* 🐨 if there's an existing image, add a hidden input that with a name "imageId" and the value set to the image's id */}
+							{/* if there's an existing image, add a hidden input that with a name "imageId" and the value set to the image's id */}
 							{existingImage ? (
-								<input name="imageId" type="hidden" value={image?.id} />
+								// 🐨 update this to use the conform.input helper on
+								// fields.image.id (make sure it stays hidden though)
+								<input {...conform.input(fields.id, { type: 'hidden' })} />
 							) : null}
 							<input
-								id="image-input"
 								aria-label="Image"
 								className="absolute left-0 top-0 z-0 h-32 w-32 cursor-pointer opacity-0"
 								onChange={event => {
@@ -241,21 +260,19 @@ function ImageChooser({
 										setPreviewImage(null)
 									}
 								}}
-								name="file"
-								type="file"
-								// 🐨 add accept="image/*" here so users only upload images
 								accept="image/*"
+								// 🐨 add the props from conform.input with the fields.file
+								{...conform.input(fields.file, { type: 'file' })}
 							/>
 						</label>
 					</div>
 				</div>
 				<div className="flex-1">
-					<Label htmlFor="alt-text">Alt Text</Label>
+					{/* 🐨 update this htmlFor to reference fields.altText.id */}
+					<Label htmlFor={fields.altText.id}>Alt Text</Label>
 					<Textarea
-						id="alt-text"
-						name="altText"
-						defaultValue={altText}
 						onChange={e => setAltText(e.currentTarget.value)}
+						{...conform.textarea(fields.altText)}
 					/>
 				</div>
 			</div>
