@@ -16,6 +16,7 @@ import {
 	ScrollRestoration,
 	useLoaderData,
 } from '@remix-run/react'
+import { AuthenticityTokenProvider } from 'remix-utils/csrf/react'
 import { HoneypotProvider } from 'remix-utils/honeypot/react'
 import faviconAssetUrl from './assets/favicon.svg'
 import { GeneralErrorBoundary } from './components/error-boundary.tsx'
@@ -116,11 +117,14 @@ function App() {
 
 export default function AppWithProviders() {
 	const data = useLoaderData<typeof loader>()
-	// 🐨 render the HoneypotProvider here and pass the honeypot props
+	// 🐨 wrap this in the AuthenticityTokenProvider and pass the csrfToken as
+	// the "token" prop.
 	return (
-		<HoneypotProvider {...data.honeyProps}>
-			<App />
-		</HoneypotProvider>
+		<AuthenticityTokenProvider token={data.csrfToken}>
+			<HoneypotProvider {...data.honeyProps}>
+				<App />
+			</HoneypotProvider>
+		</AuthenticityTokenProvider>
 	)
 }
 
