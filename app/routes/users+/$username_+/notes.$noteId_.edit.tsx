@@ -1,6 +1,7 @@
 import {
 	conform,
 	type FieldConfig,
+	useFieldList,
 	useFieldset,
 	useForm,
 } from '@conform-to/react'
@@ -65,7 +66,7 @@ const ImageFieldsetSchema = z.object({
 const NoteEditorSchema = z.object({
 	title: z.string().max(titleMaxLength),
 	content: z.string().max(contentMaxLength),
-	image: ImageFieldsetSchema,
+	images: z.array(ImageFieldsetSchema),
 })
 
 export async function action({ request, params }: DataFunctionArgs) {
@@ -84,13 +85,15 @@ export async function action({ request, params }: DataFunctionArgs) {
 			status: 400,
 		})
 	}
-	const { title, content, image } = submission.value
+	// 🐨 update this to "images"
+	const { title, content, images } = submission.value
 
+	// 🐨 now just pass the whole images array here.
 	await updateNote({
 		id: params.noteId,
 		title,
 		content,
-		images: [image],
+		images,
 	})
 
 	return redirect(`/users/${params.username}/notes/${params.noteId}`)
@@ -129,10 +132,13 @@ export default function NoteEdit() {
 		defaultValue: {
 			title: data.note.title,
 			content: data.note.content,
-			image: data.note.images[0],
+			// 🐨 rename this to "images" and pass all of them
+			images: data.note.images.length ? data.note.images : [{}],
 		},
 	})
 
+	// 🐨 create the imageList with useFieldList here
+	const imageList = useFieldList(form.ref, fields.images)
 	return (
 		<div className="absolute inset-0">
 			<Form
@@ -164,7 +170,14 @@ export default function NoteEdit() {
 					</div>
 					<div>
 						<Label>Image</Label>
-						<ImageChooser config={fields.image} />
+						{/* 🐨 render the ImageChooser inside a ul mapping the imageList into li elements */}
+						<ul className="flex flex-col gap-4">
+							{imageList.map(image => (
+								<li key={image.key}>
+									<ImageChooser config={image} />
+								</li>
+							))}
+						</ul>
 					</div>
 				</div>
 				<ErrorList id={form.errorId} errors={form.errors} />
