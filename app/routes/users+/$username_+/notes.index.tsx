@@ -16,7 +16,7 @@ export const meta: MetaFunction<
 	const notesMatch = matches.find(
 		m => m.id === 'routes/users+/$username_+/notes',
 	)
-	console.log(notesMatch)
+	// console.log(notesMatch)
 	const displayName = notesMatch?.data?.owner.name ?? params.username
 	const noteCount = notesMatch?.data?.notes.length ?? 0
 	const notesText = noteCount === 1 ? 'note' : 'notes'

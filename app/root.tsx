@@ -1,6 +1,10 @@
 import os from 'node:os'
 import { cssBundleHref } from '@remix-run/css-bundle'
-import { json, type LinksFunction } from '@remix-run/node'
+import {
+	type DataFunctionArgs,
+	json,
+	type LinksFunction,
+} from '@remix-run/node'
 import {
 	Link,
 	Links,
@@ -18,6 +22,7 @@ import { GeneralErrorBoundary } from './components/error-boundary.tsx'
 import { KCDShop } from './kcdshop.tsx'
 import fontStylesheetUrl from './styles/font.css'
 import tailwindStylesheetUrl from './styles/tailwind.css'
+import { csrf } from './utils/csrf.server.ts'
 import { getEnv } from './utils/env.server.ts'
 import { honeypot } from './utils/honeypot.server.ts'
 
@@ -30,11 +35,18 @@ export const links: LinksFunction = () => {
 	].filter(Boolean)
 }
 
-export async function loader() {
+export async function loader({ request }: DataFunctionArgs) {
 	// 🐨 get the honeypot props from the honeypot object and add them to this
 	// object.
 	const honeyProps = honeypot.getInputProps()
-	return json({ username: os.userInfo().username, ENV: getEnv(), honeyProps })
+	// set cookie to be used in different tabs
+	const [csrfToken, csrfCookieHeader] = await csrf.commitToken(request)
+	return json(
+		{ username: os.userInfo().username, ENV: getEnv(), honeyProps, csrfToken },
+		{
+			headers: csrfCookieHeader ? { 'set-cookie': csrfCookieHeader } : {},
+		},
+	)
 }
 
 function Document({ children }: { children: React.ReactNode }) {
@@ -103,7 +115,6 @@ function App() {
 }
 
 export default function AppWithProviders() {
-	// 💰 you'll need this const data = useLoaderData<typeof loader>()
 	const data = useLoaderData<typeof loader>()
 	// 🐨 render the HoneypotProvider here and pass the honeypot props
 	return (
