@@ -84,7 +84,7 @@ export async function action({ request, params }: DataFunctionArgs) {
 	// 🐨 If the submission.intent is not "submit" then return the submission with
 	// a status of 'idle' and the submission.
 	if (submission.intent !== 'submit') {
-		return json({ status: 'idle', submission })
+		return json({ status: 'idle', submission } as const)
 	}
 
 	if (!submission.value) {
@@ -181,7 +181,10 @@ export default function NoteEdit() {
 						<Label>Image</Label>
 						<ul className="flex flex-col gap-4">
 							{imageList.map((image, index) => (
-								<li key={image.key}>
+								<li
+									key={image.key}
+									className="relative border-b-2 border-muted-foreground"
+								>
 									<button
 										className="text-foreground-destructive absolute right-0 top-0"
 										{...list.remove(fields.images.name, { index })}
