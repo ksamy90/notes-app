@@ -1,6 +1,7 @@
 import {
 	conform,
 	type FieldConfig,
+	list,
 	useFieldList,
 	useFieldset,
 	useForm,
@@ -80,15 +81,19 @@ export async function action({ request, params }: DataFunctionArgs) {
 		schema: NoteEditorSchema,
 	})
 
+	// 🐨 If the submission.intent is not "submit" then return the submission with
+	// a status of 'idle' and the submission.
+	if (submission.intent !== 'submit') {
+		return json({ status: 'idle', submission })
+	}
+
 	if (!submission.value) {
 		return json({ status: 'error', submission } as const, {
 			status: 400,
 		})
 	}
-	// 🐨 update this to "images"
 	const { title, content, images } = submission.value
 
-	// 🐨 now just pass the whole images array here.
 	await updateNote({
 		id: params.noteId,
 		title,
@@ -132,12 +137,10 @@ export default function NoteEdit() {
 		defaultValue: {
 			title: data.note.title,
 			content: data.note.content,
-			// 🐨 rename this to "images" and pass all of them
 			images: data.note.images.length ? data.note.images : [{}],
 		},
 	})
 
-	// 🐨 create the imageList with useFieldList here
 	const imageList = useFieldList(form.ref, fields.images)
 	return (
 		<div className="absolute inset-0">
@@ -147,6 +150,12 @@ export default function NoteEdit() {
 				{...form.props}
 				encType="multipart/form-data"
 			>
+				{/*
+					This hidden submit button is here to ensure that when the user hits
+					"enter" on an input field, the primary form function is submitted
+					rather than the first button in the form (which is delete/add image).
+				*/}
+				<button type="submit" className="hidden" />
 				<div className="flex flex-col gap-1">
 					<div>
 						<Label htmlFor={fields.title.id}>Title</Label>
@@ -170,15 +179,28 @@ export default function NoteEdit() {
 					</div>
 					<div>
 						<Label>Image</Label>
-						{/* 🐨 render the ImageChooser inside a ul mapping the imageList into li elements */}
 						<ul className="flex flex-col gap-4">
-							{imageList.map(image => (
+							{imageList.map((image, index) => (
 								<li key={image.key}>
+									<button
+										className="text-foreground-destructive absolute right-0 top-0"
+										{...list.remove(fields.images.name, { index })}
+									>
+										<span aria-hidden>❌</span>{' '}
+										<span className="sr-only">Remove image {index + 1}</span>
+									</button>
 									<ImageChooser config={image} />
 								</li>
 							))}
 						</ul>
 					</div>
+					<Button
+						className="mt-3"
+						{...list.insert(fields.images.name, { defaultValue: {} })}
+					>
+						<span aria-hidden>➕ Image</span>{' '}
+						<span className="sr-only">Add image</span>
+					</Button>
 				</div>
 				<ErrorList id={form.errorId} errors={form.errors} />
 			</Form>
