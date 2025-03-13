@@ -82,8 +82,11 @@ function App() {
 							<div className="font-bold">notes</div>
 						</div>
 					</Link>
-					<Link className="underline" to="users/samson/notes">
+					{/* <Link className="underline" to="users/samson/notes">
 						Samson's Notes
+					</Link> */}
+					<Link className="underline" to="/signup">
+						Signup
 					</Link>
 				</nav>
 			</header>
