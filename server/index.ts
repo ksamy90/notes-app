@@ -76,14 +76,37 @@ app.use(morgan('tiny'))
 // rate limiting because playwright tests are very fast and we don't want to
 // have to wait for the rate limit to reset between tests.
 const maxMultiple = process.env.TESTING ? 10_000 : 1
-app.use(
-	rateLimit({
-		windowMs: 60 * 1000,
-		max: 1000 * maxMultiple,
-		standardHeaders: true,
-		legacyHeaders: false,
-	}),
-)
+
+// general rate limit for get requests
+const rateLimitDefault = {
+	windowMs: 60 * 1000,
+	max: 1000 * maxMultiple,
+	standardHeaders: true,
+	legacyHeaders: false,
+}
+// - strongestRateLimit with 10 per minute. Applies to non-GET requests to /signup
+const strongestRateLimit = rateLimit({
+	...rateLimitDefault,
+	max: 10 * maxMultiple,
+})
+// - strongRateLimit with 100 per minute. Applies to other non-GET requests
+const strongRateLimit = rateLimit({
+	...rateLimitDefault,
+	max: 100 * maxMultiple,
+})
+// - generalRateLimit with 1000 per minute. Applies to everything else.
+const generalRateLimit = rateLimit(rateLimitDefault)
+app.use((req, res, next) => {
+	const strongPaths = ['/signup']
+	if (req.method !== 'GET' && req.method !== 'HEAD') {
+		if (strongPaths.some(p => req.path.includes(p))) {
+			return strongestRateLimit(req, res, next)
+		}
+		return strongRateLimit(req, res, next)
+	}
+
+	return generalRateLimit(req, res, next)
+})
 
 app.use((_, res, next) => {
 	res.locals.cspNonce = crypto.randomBytes(16).toString('hex')
