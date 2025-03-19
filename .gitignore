@@ -15,7 +15,6 @@ README.mdx
 /playwright-report/
 /playwright/.cache/
 /tests/fixtures/email/
-/tests/
 /coverage
 
 /other/cache.db
