@@ -1,17 +1,40 @@
 import fs from 'node:fs'
 import { faker } from '@faker-js/faker'
 import { PrismaClient } from '@prisma/client'
+import { UniqueEnforcer } from 'enforce-unique'
 import { promiseHash } from 'remix-utils/promise'
 
 const prisma = new PrismaClient()
 
+const uniqueUsernameEnforcer = new UniqueEnforcer()
+
 export function createUser() {
 	const firstName = faker.person.firstName()
 	const lastName = faker.person.lastName()
-	const username = faker.internet.userName({
-		firstName: firstName.toLowerCase(),
-		lastName: lastName.toLowerCase(),
-	})
+
+	// 🐨 use the unique username enforcer here
+	// 💯 you might add a tiny bit of random alphanumeric characters to the start
+	// of the username to reduce the chance of collisions.
+
+	const username = uniqueUsernameEnforcer
+		.enforce(() => {
+			return (
+				faker.string.alphanumeric({ length: 2 }) +
+				'_' +
+				faker.internet.userName({
+					firstName: firstName.toLowerCase(),
+					lastName: lastName.toLowerCase(),
+				})
+			)
+		})
+		.slice(0, 20)
+		.toLowerCase()
+		.replace(/[^a-z0-9_]/g, '_')
+
+	// 🐨 transform the username to only be the first 20 characters
+	// 💰 you can use .slice(0, 20) for this
+	// 🐨 turn the username to lowercase
+	// 🐨 replace any non-alphanumeric characters with an underscore
 	return {
 		username,
 		name: `${firstName} ${lastName}`,
@@ -96,30 +119,35 @@ async function seed() {
 	// 🐨 we have a totalUsers variable. I'd like you to wrap this
 	// prisma.user.create call in a loop for that many times.
 	for (let index = 0; index < totalUsers; index++) {
-		await prisma.user.create({
-			data: {
-				...createUser(),
-				image: {
-					create: userImages[index % 10],
+		await prisma.user
+			.create({
+				data: {
+					...createUser(),
+					image: {
+						create: userImages[index % 10],
+					},
+					notes: {
+						create: Array.from({
+							length: faker.number.int({ min: 1, max: 3 }),
+						}).map(() => ({
+							title: faker.lorem.sentence(),
+							content: faker.lorem.paragraphs(),
+							images: {
+								create: Array.from({
+									length: faker.number.int({ min: 1, max: 3 }),
+								}).map(() => {
+									const imgNumber = faker.number.int({ min: 0, max: 9 })
+									return noteImages[imgNumber]
+								}),
+							},
+						})),
+					},
 				},
-				notes: {
-					create: Array.from({
-						length: faker.number.int({ min: 1, max: 3 }),
-					}).map(() => ({
-						title: faker.lorem.sentence(),
-						content: faker.lorem.paragraphs(),
-						images: {
-							create: Array.from({
-								length: faker.number.int({ min: 1, max: 3 }),
-							}).map(() => {
-								const imgNumber = faker.number.int({ min: 0, max: 9 })
-								return noteImages[imgNumber]
-							}),
-						},
-					})),
-				},
-			},
-		})
+			})
+			.catch(e => {
+				console.error('Error creating a user:', e)
+				return null
+			})
 	}
 	console.timeEnd(`👤 Created ${totalUsers} users...`)
 
