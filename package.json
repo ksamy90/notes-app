@@ -51,6 +51,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@faker-js/faker": "^8.4.1",
     "@playwright/test": "^1.39.0",
     "@remix-run/dev": "2.1.0",
     "@remix-run/eslint-config": "2.1.0",
@@ -77,6 +78,9 @@
     "remix-flat-routes": "^0.6.1",
     "tsx": "^3.14.0",
     "typescript": "^5.2.2"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
   },
   "engines": {
     "node": "18"
