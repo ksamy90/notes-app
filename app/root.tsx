@@ -78,6 +78,7 @@ function App() {
 	const data = useLoaderData<typeof loader>()
 	const matches = useMatches()
 	const isOnSearchPage = matches.find(m => m.id === 'routes/users+/index')
+	console.log(isOnSearchPage)
 	return (
 		<Document>
 			<header className="container mx-auto py-6">
