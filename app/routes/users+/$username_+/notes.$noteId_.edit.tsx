@@ -1,33 +1,42 @@
 import {
 	conform,
-	type FieldConfig,
 	list,
 	useFieldList,
 	useFieldset,
 	useForm,
+	type FieldConfig,
 } from '@conform-to/react'
 import { getFieldsetConstraint, parse } from '@conform-to/zod'
 import {
-	json,
-	redirect,
-	unstable_parseMultipartFormData as parseMultipartFormData,
 	unstable_createMemoryUploadHandler as createMemoryUploadHandler,
-	type DataFunctionArgs,
+	json,
+	unstable_parseMultipartFormData as parseMultipartFormData,
+	redirect,
+	type ActionFunctionArgs,
+	type LoaderFunctionArgs,
 } from '@remix-run/node'
 import { Form, useActionData, useLoaderData } from '@remix-run/react'
 import { useRef, useState } from 'react'
+import { AuthenticityTokenInput } from 'remix-utils/csrf/react'
 import { z } from 'zod'
 import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 import { floatingToolbarClassName } from '#app/components/floating-toolbar.tsx'
+import { ErrorList, Field, TextareaField } from '#app/components/forms.tsx'
 import { Button } from '#app/components/ui/button.tsx'
-import { Input } from '#app/components/ui/input.tsx'
+import { Icon } from '#app/components/ui/icon.tsx'
 import { Label } from '#app/components/ui/label.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
 import { Textarea } from '#app/components/ui/textarea.tsx'
+import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { db, updateNote } from '#app/utils/db.server.ts'
-import { cn, invariantResponse, useIsSubmitting } from '#app/utils/misc.tsx'
+import {
+	cn,
+	getNoteImgSrc,
+	invariantResponse,
+	useIsPending,
+} from '#app/utils/misc.tsx'
 
-export async function loader({ params }: DataFunctionArgs) {
+export async function loader({ params }: LoaderFunctionArgs) {
 	const note = db.note.findFirst({
 		where: {
 			id: {
@@ -35,9 +44,9 @@ export async function loader({ params }: DataFunctionArgs) {
 			},
 		},
 	})
-	if (!note) {
-		throw new Response('Note note found', { status: 404 })
-	}
+
+	invariantResponse(note, 'Note not found', { status: 404 })
+
 	return json({
 		note: {
 			title: note.title,
@@ -47,85 +56,60 @@ export async function loader({ params }: DataFunctionArgs) {
 	})
 }
 
+const titleMinLength = 1
 const titleMaxLength = 100
+const contentMinLength = 1
 const contentMaxLength = 10000
 
 const MAX_UPLOAD_SIZE = 1024 * 1024 * 3 // 3MB
 
-// 🐨 make a ImageFieldsetSchema that's an object which has id, file, and altText
 const ImageFieldsetSchema = z.object({
 	id: z.string().optional(),
 	file: z
 		.instanceof(File)
+		.optional()
 		.refine(file => {
-			return file.size <= MAX_UPLOAD_SIZE
-		}, 'File size must be less than 3MB')
-		.optional(),
+			return !file || file.size <= MAX_UPLOAD_SIZE
+		}, 'File size must be less than 3MB'),
 	altText: z.string().optional(),
 })
 
 const NoteEditorSchema = z.object({
-	title: z.string().max(titleMaxLength),
-	content: z.string().max(contentMaxLength),
-	images: z.array(ImageFieldsetSchema),
+	title: z.string().min(titleMinLength).max(titleMaxLength),
+	content: z.string().min(contentMinLength).max(contentMaxLength),
+	images: z.array(ImageFieldsetSchema).max(5).optional(),
 })
 
-export async function action({ request, params }: DataFunctionArgs) {
+export async function action({ request, params }: ActionFunctionArgs) {
 	invariantResponse(params.noteId, 'noteId param is required')
 
 	const formData = await parseMultipartFormData(
 		request,
 		createMemoryUploadHandler({ maxPartSize: MAX_UPLOAD_SIZE }),
 	)
+	await validateCSRF(formData, request.headers)
+
 	const submission = parse(formData, {
 		schema: NoteEditorSchema,
 	})
 
-	// 🐨 If the submission.intent is not "submit" then return the submission with
-	// a status of 'idle' and the submission.
 	if (submission.intent !== 'submit') {
 		return json({ status: 'idle', submission } as const)
 	}
 
 	if (!submission.value) {
-		return json({ status: 'error', submission } as const, {
-			status: 400,
-		})
+		return json({ status: 'error', submission } as const, { status: 400 })
 	}
-	const { title, content, images } = submission.value
-
-	await updateNote({
-		id: params.noteId,
-		title,
-		content,
-		images,
-	})
+	const { title, content, images = [] } = submission.value
+	await updateNote({ id: params.noteId, title, content, images })
 
 	return redirect(`/users/${params.username}/notes/${params.noteId}`)
-}
-
-function ErrorList({
-	id,
-	errors,
-}: {
-	id?: string
-	errors?: Array<string> | null
-}) {
-	return errors?.length ? (
-		<ul id={id} className="flex flex-col gap-1">
-			{errors.map((error, i) => (
-				<li key={i} className="text-[10px] text-foreground-danger">
-					{error}
-				</li>
-			))}
-		</ul>
-	) : null
 }
 
 export default function NoteEdit() {
 	const data = useLoaderData<typeof loader>()
 	const actionData = useActionData<typeof action>()
-	const isSubmitting = useIsSubmitting()
+	const isPending = useIsPending()
 
 	const [form, fields] = useForm({
 		id: 'note-editor',
@@ -140,8 +124,8 @@ export default function NoteEdit() {
 			images: data.note.images.length ? data.note.images : [{}],
 		},
 	})
-
 	const imageList = useFieldList(form.ref, fields.images)
+
 	return (
 		<div className="absolute inset-0">
 			<Form
@@ -150,6 +134,7 @@ export default function NoteEdit() {
 				{...form.props}
 				encType="multipart/form-data"
 			>
+				<AuthenticityTokenInput />
 				{/*
 					This hidden submit button is here to ensure that when the user hits
 					"enter" on an input field, the primary form function is submitted
@@ -157,28 +142,23 @@ export default function NoteEdit() {
 				*/}
 				<button type="submit" className="hidden" />
 				<div className="flex flex-col gap-1">
+					<Field
+						labelProps={{ children: 'Title' }}
+						inputProps={{
+							autoFocus: true,
+							...conform.input(fields.title),
+						}}
+						errors={fields.title.errors}
+					/>
+					<TextareaField
+						labelProps={{ children: 'Content' }}
+						textareaProps={{
+							...conform.textarea(fields.content),
+						}}
+						errors={fields.content.errors}
+					/>
 					<div>
-						<Label htmlFor={fields.title.id}>Title</Label>
-						<Input autoFocus {...conform.input(fields.title)} />
-						<div className="min-h-[32px] px-4 pb-3 pt-1">
-							<ErrorList
-								id={fields.title.errorId}
-								errors={fields.title.errors}
-							/>
-						</div>
-					</div>
-					<div>
-						<Label htmlFor={fields.content.id}>Content</Label>
-						<Textarea {...conform.textarea(fields.content)} />
-						<div className="min-h-[32px] px-4 pb-3 pt-1">
-							<ErrorList
-								id={fields.content.errorId}
-								errors={fields.content.errors}
-							/>
-						</div>
-					</div>
-					<div>
-						<Label>Image</Label>
+						<Label>Images</Label>
 						<ul className="flex flex-col gap-4">
 							{imageList.map((image, index) => (
 								<li
@@ -189,7 +169,9 @@ export default function NoteEdit() {
 										className="text-foreground-destructive absolute right-0 top-0"
 										{...list.remove(fields.images.name, { index })}
 									>
-										<span aria-hidden>❌</span>{' '}
+										<span aria-hidden>
+											<Icon name="cross-1" />
+										</span>{' '}
 										<span className="sr-only">Remove image {index + 1}</span>
 									</button>
 									<ImageChooser config={image} />
@@ -201,7 +183,9 @@ export default function NoteEdit() {
 						className="mt-3"
 						{...list.insert(fields.images.name, { defaultValue: {} })}
 					>
-						<span aria-hidden>➕ Image</span>{' '}
+						<span aria-hidden>
+							<Icon name="plus">Image</Icon>
+						</span>{' '}
 						<span className="sr-only">Add image</span>
 					</Button>
 				</div>
@@ -214,8 +198,8 @@ export default function NoteEdit() {
 				<StatusButton
 					form={form.id}
 					type="submit"
-					disabled={isSubmitting}
-					status={isSubmitting ? 'pending' : 'idle'}
+					disabled={isPending}
+					status={isPending ? 'pending' : 'idle'}
 				>
 					Submit
 				</StatusButton>
@@ -229,28 +213,24 @@ function ImageChooser({
 }: {
 	config: FieldConfig<z.infer<typeof ImageFieldsetSchema>>
 }) {
-	// 🐨 create a ref for the fieldset
-	// 🐨 create a conform fields object with useFieldset
 	const ref = useRef<HTMLFieldSetElement>(null)
 	const fields = useFieldset(ref, config)
-
-	// 🐨 the existingImage should now be based on whether fields.id.defaultValue is set
 	const existingImage = Boolean(fields.id.defaultValue)
 	const [previewImage, setPreviewImage] = useState<string | null>(
-		// 🐨 this should now reference fields.id.defaultValue
-		existingImage ? `/resources/images/${fields.id.defaultValue}` : null,
+		fields.id.defaultValue ? getNoteImgSrc(fields.id.defaultValue) : null,
 	)
-	// 🐨 this should now reference fields.altText.defaultValue
 	const [altText, setAltText] = useState(fields.altText.defaultValue ?? '')
 
 	return (
-		// 🐨 pass the ref prop to fieldset
-		<fieldset ref={ref}>
+		<fieldset
+			ref={ref}
+			aria-invalid={Boolean(config.errors?.length) || undefined}
+			aria-describedby={config.errors?.length ? config.errorId : undefined}
+		>
 			<div className="flex gap-3">
 				<div className="w-32">
 					<div className="relative h-32 w-32">
 						<label
-							// 🐨 update this htmlFor to reference fields.id.id
 							htmlFor={fields.file.id}
 							className={cn('group absolute h-32 w-32 rounded-lg', {
 								'bg-accent opacity-40 focus-within:opacity-100 hover:opacity-100':
@@ -273,13 +253,10 @@ function ImageChooser({
 								</div>
 							) : (
 								<div className="flex h-32 w-32 items-center justify-center rounded-lg border border-muted-foreground text-4xl text-muted-foreground">
-									➕
+									<Icon name="plus" />
 								</div>
 							)}
-							{/* if there's an existing image, add a hidden input that with a name "imageId" and the value set to the image's id */}
 							{existingImage ? (
-								// 🐨 update this to use the conform.input helper on
-								// fields.image.id (make sure it stays hidden though)
 								<input {...conform.input(fields.id, { type: 'hidden' })} />
 							) : null}
 							<input
@@ -299,20 +276,30 @@ function ImageChooser({
 									}
 								}}
 								accept="image/*"
-								// 🐨 add the props from conform.input with the fields.file
 								{...conform.input(fields.file, { type: 'file' })}
 							/>
 						</label>
 					</div>
+					<div className="min-h-[32px] px-4 pb-3 pt-1">
+						<ErrorList id={fields.file.errorId} errors={fields.file.errors} />
+					</div>
 				</div>
 				<div className="flex-1">
-					{/* 🐨 update this htmlFor to reference fields.altText.id */}
 					<Label htmlFor={fields.altText.id}>Alt Text</Label>
 					<Textarea
 						onChange={e => setAltText(e.currentTarget.value)}
 						{...conform.textarea(fields.altText)}
 					/>
+					<div className="min-h-[32px] px-4 pb-3 pt-1">
+						<ErrorList
+							id={fields.altText.errorId}
+							errors={fields.altText.errors}
+						/>
+					</div>
 				</div>
+			</div>
+			<div className="min-h-[32px] px-4 pb-3 pt-1">
+				<ErrorList id={config.errorId} errors={config.errors} />
 			</div>
 		</fieldset>
 	)
