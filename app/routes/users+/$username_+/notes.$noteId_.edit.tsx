@@ -146,43 +146,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
 	const { title, content, imageUpdates = [], newImages = [] } = submission.value
 
-	// setup the transaction for read write data
-	// will fail complete or succeed complete
-	await prisma.$transaction(async $prisma => {
-		await $prisma.note.update({
-			select: { id: true },
-			where: { id: params.noteId },
-			data: { title, content },
-		})
-
-		await $prisma.noteImage.deleteMany({
-			where: {
-				id: { notIn: imageUpdates.map(i => i.id) },
-				noteId: params.noteId,
+	await prisma.note.update({
+		select: { id: true },
+		where: { id: params.noteId },
+		data: {
+			title,
+			content,
+			// setup nested transaction cals fro prisma execution
+			images: {
+				deleteMany: { id: { notIn: imageUpdates.map(i => i.id) } },
+				updateMany: imageUpdates.map(updates => ({
+					where: { id: updates.id },
+					data: { ...updates, id: updates.blob ? cuid() : updates.id },
+				})),
+				create: newImages,
 			},
-		})
-
-		for (const updates of imageUpdates) {
-			await $prisma.noteImage.update({
-				select: { id: true },
-				where: { id: updates.id },
-				// bust the cache for updated images
-				data: { ...updates, id: updates.blob ? cuid() : updates.id },
-			})
-		}
-
-		for (const newImage of newImages) {
-			await $prisma.noteImage.create({
-				select: { id: true },
-				data: { ...newImage, noteId: params.noteId },
-			})
-		}
+		},
 	})
-
-	// 🦉 uncomment this to test out the transaction rollback
-	// throw new Error('Gotcha 🧝‍♂️, https://kcd.im/promises')
-
-	// 🐨 finish the transaction here
 
 	return redirect(`/users/${params.username}/notes/${params.noteId}`)
 }
