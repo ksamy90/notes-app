@@ -2,7 +2,7 @@ import { json, redirect, type LoaderFunctionArgs } from '@remix-run/node'
 import { Link, useLoaderData } from '@remix-run/react'
 import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 import { SearchBar } from '#app/components/search-bar.tsx'
-import { db } from '#app/utils/db.server.ts'
+import { prisma } from '#app/utils/db.server.ts'
 import { cn, getUserImgSrc, useDelayedIsPending } from '#app/utils/misc.tsx'
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -10,22 +10,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	if (searchTerm === '') {
 		return redirect('/users')
 	}
-	const users = db.user.findMany({
-		where: {
-			username: {
-				contains: searchTerm ?? '',
-			},
-		},
-	})
+
+	// 🐨 query the user table with prisma.$queryRaw
+	// Here are the requirements:
+	// 1. create a variable called `like` that is a string of the searchTerm surrounded by `%` characters
+	// 2. select the id, username, and name of the user (we'll bring in the image later)
+	// 3. filter where the username is LIKE the `like` variable or the name is LIKE the `like` variable
+	// 4. limit the results to 50
+	const like = `%${searchTerm ?? ''}%`
+	const users = await prisma.$queryRaw`
+		SELECT id, username, name
+		FROM User
+		WHERE username LIKE ${like}
+		OR name LIKE ${like}
+		LIMIT 50
+	`
 
 	return json({
 		status: 'idle',
-		users: users.map(u => ({
-			id: u.id,
-			username: u.username,
-			name: u.name,
-			image: u.image ? { id: u.image.id } : undefined,
-		})),
+		users,
 	} as const)
 }
 
@@ -44,6 +47,7 @@ export default function UsersRoute() {
 			</div>
 			<main>
 				{data.status === 'idle' ? (
+					// 🦺 TypeScript won't like this. We'll fix it later.
 					data.users.length ? (
 						<ul
 							className={cn(
@@ -51,6 +55,7 @@ export default function UsersRoute() {
 								{ 'opacity-50': isPending },
 							)}
 						>
+							{/* 🦺 TypeScript won't like this. We'll fix it later. */}
 							{data.users.map(user => (
 								<li key={user.id}>
 									<Link
