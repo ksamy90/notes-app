@@ -7,12 +7,11 @@ import { SearchBar } from '#app/components/search-bar.tsx'
 import { prisma } from '#app/utils/db.server.ts'
 import { cn, getUserImgSrc, useDelayedIsPending } from '#app/utils/misc.tsx'
 
-// 🐨 add a new schema here for the search results. Each entry should have an
-// id, username, and (nullable) name
 const UserSearchResultSchema = z.object({
 	id: z.string(),
 	username: z.string(),
 	name: z.string().nullable(),
+	imageId: z.string().nullable(),
 })
 
 const UserSearchResultsSchema = z.array(UserSearchResultSchema)
@@ -24,37 +23,36 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	}
 
 	const like = `%${searchTerm ?? ''}%`
-	// 🐨 rename this to "rawUsers"
 	const rawUsers = await prisma.$queryRaw`
-		SELECT id, username, name
+		-- 🦉 Once I add a join, I like to make sure to reference all tables clear,
+		-- so instead of "id" I put "User.id" or "UserImage.id"
+
+		-- 🐨 add UserImage.id to this select (💰 I'd alias it with "AS imageId")
+		SELECT User.id, User.username, User.name, UserImage.id AS imageId
 		FROM User
-		WHERE username LIKE ${like}
-		OR name LIKE ${like}
+		-- add LEFT JOIN the UserImage table here on the User.id and UserImage.userId
+		LEFT JOIN UserImage ON UserImage.userId = User.id
+		WHERE User.username LIKE ${like}
+		OR User.name LIKE ${like}
 		LIMIT 50
 	`
 
-	// 🐨 use your new schema to safely parse the rawUsers.
-	//   If there's an error, then return json with the error (result.error.message)
-	//   If there is not an error, then return json with the users
 	const result = UserSearchResultsSchema.safeParse(rawUsers)
 	if (!result.success) {
 		return json({ status: 'error', error: result.error.message } as const, {
 			status: 400,
 		})
 	}
-
 	return json({ status: 'idle', users: result.data } as const)
 }
 
 export default function UsersRoute() {
 	const data = useLoaderData<typeof loader>()
-	// console.log(data)
 	const isPending = useDelayedIsPending({
 		formMethod: 'GET',
 		formAction: '/users',
 	})
 
-	// full error to the console:
 	if (data.status === 'error') {
 		console.error(data.error)
 	}
@@ -82,8 +80,7 @@ export default function UsersRoute() {
 									>
 										<img
 											alt={user.name ?? user.username}
-											// @ts-expect-error
-											src={getUserImgSrc(user.image?.id)}
+											src={getUserImgSrc(user.imageId)}
 											className="h-16 w-16 rounded-full"
 										/>
 										{user.name ? (
