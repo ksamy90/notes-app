@@ -170,6 +170,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 		await prisma.noteImage.update({
 			select: { id: true },
 			where: { id: updates.id },
+			// bust the cache for updated images
 			data: { ...updates, id: updates.blob ? cuid() : updates.id },
 		})
 	}
