@@ -24,17 +24,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 	const like = `%${searchTerm ?? ''}%`
 	const rawUsers = await prisma.$queryRaw`
-		-- 🦉 Once I add a join, I like to make sure to reference all tables clear,
-		-- so instead of "id" I put "User.id" or "UserImage.id"
-
-		-- 🐨 add UserImage.id to this select (💰 I'd alias it with "AS imageId")
 		SELECT User.id, User.username, User.name, UserImage.id AS imageId
 		FROM User
-		-- add LEFT JOIN the UserImage table here on the User.id and UserImage.userId
 		LEFT JOIN UserImage ON UserImage.userId = User.id
 		WHERE User.username LIKE ${like}
 		OR User.name LIKE ${like}
-		-- nested ORDER BY query
 		ORDER BY (
 			SELECT Note.updatedAt
 			FROM Note
