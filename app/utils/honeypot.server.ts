@@ -7,7 +7,7 @@ export const honeypot = new Honeypot({
 	encryptionSeed: process.env.HONEYPOT_SECRET,
 })
 
-export function checkHoneyPot(formData: FormData) {
+export function checkHoneypot(formData: FormData) {
 	try {
 		honeypot.check(formData)
 	} catch (error) {
