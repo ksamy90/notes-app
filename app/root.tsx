@@ -4,8 +4,8 @@ import { parse } from '@conform-to/zod'
 import { cssBundleHref } from '@remix-run/css-bundle'
 import {
 	json,
-	type LoaderFunctionArgs,
 	type ActionFunctionArgs,
+	type LoaderFunctionArgs,
 	type LinksFunction,
 } from '@remix-run/node'
 import {
@@ -38,7 +38,7 @@ import { csrf } from './utils/csrf.server.ts'
 import { getEnv } from './utils/env.server.ts'
 import { honeypot } from './utils/honeypot.server.ts'
 import { invariantResponse } from './utils/misc.tsx'
-import { type Theme } from './utils/theme.server.ts'
+import { getTheme, setTheme, type Theme } from './utils/theme.server.ts'
 
 export const links: LinksFunction = () => {
 	return [
@@ -55,6 +55,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	return json(
 		{
 			username: os.userInfo().username,
+			// 🐨 get the theme from the request's cookie header using the getTheme utility:
+			theme: getTheme(request),
 			ENV: getEnv(),
 			csrfToken,
 			honeyProps,
@@ -85,13 +87,18 @@ export async function action({ request }: ActionFunctionArgs) {
 	if (!submission.value) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
+	// 🐨 get the theme from the submission.value
+	// 🐨 get the value of the cookie header by calling setTheme with the theme
+	const { theme } = submission.value
 
-	// 🐨 Uncomment the console.log to test things out:
-	console.log(submission.value)
-
-	// we'll do stuff with the submission next...
-
-	return json({ success: true, submission })
+	const responseInit = {
+		headers: {
+			// 🐨 add a 'set-cookie' header to this response and set it to the
+			// serialized cookie:
+			'set-cookie': setTheme(theme),
+		},
+	}
+	return json({ success: true, submission }, responseInit)
 }
 
 function Document({
@@ -129,7 +136,7 @@ function Document({
 
 function App() {
 	const data = useLoaderData<typeof loader>()
-	const theme = 'light' // we'll handle this later
+	const theme = data.theme // 🐨 change this to the value you get from the loader
 	const matches = useMatches()
 	const isOnSearchPage = matches.find(m => m.id === 'routes/users+/index')
 	return (
@@ -184,12 +191,10 @@ export default function AppWithProviders() {
 }
 
 function ThemeSwitch({ userPreference }: { userPreference?: Theme }) {
-	// 🐨 create a fetcher. 💰 The generic will be <typeof action>
 	const fetcher = useFetcher<typeof action>()
 
 	const [form] = useForm({
 		id: 'theme-switch',
-		// 🐨 set the lastSubmission to fetcher.data?.submission
 		lastSubmission: fetcher.data?.submission,
 		onValidate({ formData }) {
 			return parse(formData, { schema: ThemeFormSchema })
@@ -197,7 +202,6 @@ function ThemeSwitch({ userPreference }: { userPreference?: Theme }) {
 	})
 
 	const mode = userPreference ?? 'light'
-	// 🐨 set the nextMode to the opposite of the current mode
 	const nextMode = mode === 'light' ? 'dark' : 'light'
 	const modeLabel = {
 		light: (
@@ -213,13 +217,10 @@ function ThemeSwitch({ userPreference }: { userPreference?: Theme }) {
 	}
 
 	return (
-		// 🐨 change this to a fetcher.Form and set the method as POST
 		<fetcher.Form method="POST" {...form.props}>
-			{/* 🐨 add a hidden input for the theme and set its value to nextMode */}
 			<input type="hidden" name="theme" value={nextMode} />
 			<div className="flex gap-2">
 				<button
-					// 🐨 set the name to "intent" and the value to "update-theme"
 					name="intent"
 					value="update-theme"
 					type="submit"
