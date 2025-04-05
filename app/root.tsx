@@ -173,6 +173,7 @@ function App() {
 				</div>
 			</div>
 			<Spacer size="3xs" />
+			<ShowToast toast={{ id: '1', type: 'success', title: 'Hello' }} />
 			{data.toast ? <ShowToast toast={data.toast} /> : null}
 		</Document>
 	)
