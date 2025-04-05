@@ -17,6 +17,7 @@ import {
 	Scripts,
 	ScrollRestoration,
 	useFetcher,
+	useFetchers,
 	useLoaderData,
 	useMatches,
 	type MetaFunction,
@@ -55,7 +56,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	return json(
 		{
 			username: os.userInfo().username,
-			// 🐨 get the theme from the request's cookie header using the getTheme utility:
 			theme: getTheme(request),
 			ENV: getEnv(),
 			csrfToken,
@@ -87,16 +87,10 @@ export async function action({ request }: ActionFunctionArgs) {
 	if (!submission.value) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
-	// 🐨 get the theme from the submission.value
-	// 🐨 get the value of the cookie header by calling setTheme with the theme
 	const { theme } = submission.value
 
 	const responseInit = {
-		headers: {
-			// 🐨 add a 'set-cookie' header to this response and set it to the
-			// serialized cookie:
-			'set-cookie': setTheme(theme),
-		},
+		headers: { 'set-cookie': setTheme(theme) },
 	}
 	return json({ success: true, submission }, responseInit)
 }
@@ -136,7 +130,8 @@ function Document({
 
 function App() {
 	const data = useLoaderData<typeof loader>()
-	const theme = data.theme // 🐨 change this to the value you get from the loader
+	// 🐨 switch this from data.theme to `useTheme()`
+	const theme = useTheme()
 	const matches = useMatches()
 	const isOnSearchPage = matches.find(m => m.id === 'routes/users+/index')
 	return (
@@ -188,6 +183,27 @@ export default function AppWithProviders() {
 			</AuthenticityTokenProvider>
 		</HoneypotProvider>
 	)
+}
+
+// 🐨 create a useTheme hook here that reads the current theme from useLoaderData
+// and returns it unless there's an ongoing fetcher setting the theme.
+// 🦉 The ThemeSwitch is using useFetcher to make the switch. You can find the
+// fetcher in your useTheme hook using the useFetchers hook which returns an
+// array of all active fetchers on the page.
+// 💰 Add a `.find` on the fetchers array to find the fetcher which has formData
+// with an intent of 'update-theme'. If that fetcher is found, then return the
+// 'theme' from the fetcher's formData.
+function useTheme() {
+	const data = useLoaderData<typeof loader>()
+	const fetchers = useFetchers()
+	const themeFetcher = fetchers.find(
+		fetcher => fetcher.formData?.get('intent') === 'update-theme',
+	)
+	const optimisticTheme = themeFetcher?.formData?.get('theme')
+	if (optimisticTheme === 'light' || optimisticTheme === 'dark') {
+		return optimisticTheme
+	}
+	return data.theme
 }
 
 function ThemeSwitch({ userPreference }: { userPreference?: Theme }) {
