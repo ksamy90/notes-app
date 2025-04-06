@@ -40,7 +40,7 @@ import tailwindStylesheetUrl from './styles/tailwind.css'
 import { csrf } from './utils/csrf.server.ts'
 import { getEnv } from './utils/env.server.ts'
 import { honeypot } from './utils/honeypot.server.ts'
-import { invariantResponse } from './utils/misc.tsx'
+import { combineHeaders, invariantResponse } from './utils/misc.tsx'
 import { getTheme, setTheme, type Theme } from './utils/theme.server.ts'
 import { toastSessionStorage } from './utils/toast.server.ts'
 
@@ -56,25 +56,31 @@ export const links: LinksFunction = () => {
 export async function loader({ request }: LoaderFunctionArgs) {
 	const [csrfToken, csrfCookieHeader] = await csrf.commitToken(request)
 	const honeyProps = honeypot.getInputProps()
-	// 🐨 get the cookie header from the request
-	// 🐨 get the toastCookieSession using the toastSessionStorage.getSession
-	// 🐨 get the 'toast' from the toastCookieSession
 	const toastCookieSession = await toastSessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
 	const toast = toastCookieSession.get('toast')
+	// 🐨 unset the toast from the session here
+	toastCookieSession.unset('toast')
 	return json(
 		{
 			username: os.userInfo().username,
 			theme: getTheme(request),
-			// 🐨 set this to the toast you got from the toastCookieSession:
 			toast,
 			ENV: getEnv(),
 			csrfToken,
 			honeyProps,
 		},
 		{
-			headers: csrfCookieHeader ? { 'set-cookie': csrfCookieHeader } : {},
+			// 🐨 use "combineHeaders" to add another 'set-cookie' header and commit
+			// the session change here
+			headers: combineHeaders(
+				csrfCookieHeader ? { 'set-cookie': csrfCookieHeader } : null,
+				{
+					'set-cookie':
+						await toastSessionStorage.commitSession(toastCookieSession),
+				},
+			),
 		},
 	)
 }
