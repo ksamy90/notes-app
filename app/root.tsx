@@ -60,8 +60,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		request.headers.get('cookie'),
 	)
 	const toast = toastCookieSession.get('toast')
-	// 🐨 unset the toast from the session here
-	toastCookieSession.unset('toast')
 	return json(
 		{
 			username: os.userInfo().username,

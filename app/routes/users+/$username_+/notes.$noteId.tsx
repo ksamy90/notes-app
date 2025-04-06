@@ -88,27 +88,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
 	invariantResponse(note, 'Not found', { status: 404 })
 
 	await prisma.note.delete({ where: { id: note.id } })
-
-	// 🐨 get the cookie header from the request
-	// 🐨 get the toastCookieSession using the toastSessionStorage.getSession
-	// 🐨 set a 'toast' value on the session with the following toast object:
-	// {
-	// 	type: 'success',
-	// 	title: 'Note deleted',
-	// 	description: 'Your note has been deleted',
-	// }
 	const toastCookieSession = await toastSessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
-	toastCookieSession.set('toast', {
+	// 🐨 change this to "flash"
+	toastCookieSession.flash('toast', {
 		type: 'success',
 		title: 'Note deleted',
 		description: 'Your note has been deleted',
 	})
 
 	return redirect(`/users/${note.owner.username}/notes`, {
-		// 🐨 add a headers object here with a 'set-cookie' property
-		// 🐨 use await toastSessionStorage.commitSession to get the cookie header
 		headers: {
 			'set-cookie': await toastSessionStorage.commitSession(toastCookieSession),
 		},
