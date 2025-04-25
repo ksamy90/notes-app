@@ -83,6 +83,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 				where: { id: userId },
 			})
 		: null
+	console.log(user)
 	return json(
 		{
 			username: os.userInfo().username,
