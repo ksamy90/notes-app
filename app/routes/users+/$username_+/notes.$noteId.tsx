@@ -2,7 +2,6 @@ import { useForm } from '@conform-to/react'
 import { getFieldsetConstraint, parse } from '@conform-to/zod'
 import {
 	json,
-	redirect,
 	type ActionFunctionArgs,
 	type LoaderFunctionArgs,
 } from '@remix-run/node'
@@ -29,7 +28,8 @@ import {
 	invariantResponse,
 	useIsPending,
 } from '#app/utils/misc.tsx'
-import { toastSessionStorage } from '#app/utils/toast.server.ts'
+import { redirectWithToast } from '#app/utils/toast.server.ts'
+import { useOptionalUser } from '#app/utils/user.ts'
 import { type loader as notesLoader } from './notes.tsx'
 
 export async function loader({ params }: LoaderFunctionArgs) {
@@ -88,30 +88,26 @@ export async function action({ request, params }: ActionFunctionArgs) {
 	invariantResponse(note, 'Not found', { status: 404 })
 
 	await prisma.note.delete({ where: { id: note.id } })
-	const toastCookieSession = await toastSessionStorage.getSession(
-		request.headers.get('cookie'),
-	)
-	// 🐨 change this to "flash"
-	toastCookieSession.flash('toast', {
-		type: 'success',
-		title: 'Note deleted',
-		description: 'Your note has been deleted',
-	})
 
-	return redirect(`/users/${note.owner.username}/notes`, {
-		headers: {
-			'set-cookie': await toastSessionStorage.commitSession(toastCookieSession),
-		},
+	throw await redirectWithToast(`/users/${note.owner.username}/notes`, {
+		type: 'success',
+		title: 'Success',
+		description: 'Your note has been deleted.',
 	})
 }
 
 export default function NoteRoute() {
 	const data = useLoaderData<typeof loader>()
+	// 🐨 get the logged in user via useOptionalUser, then determine whether the
+	// logged in user is the owner by comparing the owner's id to the logged in
+	// user's id.
+	const user = useOptionalUser()
+	const isOwner = user?.id === data.note.ownerId
 
 	return (
 		<div className="absolute inset-0 flex flex-col px-10">
 			<h2 className="mb-2 pt-12 text-h2 lg:mb-6">{data.note.title}</h2>
-			<div className="overflow-y-auto pb-24">
+			<div className={`${isOwner ? 'pb-24' : 'pb-12'} overflow-y-auto`}>
 				<ul className="flex flex-wrap gap-5 py-5">
 					{data.note.images.map(image => (
 						<li key={image.id}>
@@ -129,26 +125,28 @@ export default function NoteRoute() {
 					{data.note.content}
 				</p>
 			</div>
-			<div className={floatingToolbarClassName}>
-				<span className="text-sm text-foreground/90 max-[524px]:hidden">
-					<Icon name="clock" className="scale-125">
-						{data.timeAgo} ago
-					</Icon>
-				</span>
-				<div className="grid flex-1 grid-cols-2 justify-end gap-2 min-[525px]:flex md:gap-4">
-					<DeleteNote id={data.note.id} />
-					<Button
-						asChild
-						className="min-[525px]:max-md:aspect-square min-[525px]:max-md:px-0"
-					>
-						<Link to="edit">
-							<Icon name="pencil-1" className="scale-125 max-md:scale-150">
-								<span className="max-md:hidden">Edit</span>
-							</Icon>
-						</Link>
-					</Button>
+			{isOwner ? (
+				<div className={floatingToolbarClassName}>
+					<span className="text-sm text-foreground/90 max-[524px]:hidden">
+						<Icon name="clock" className="scale-125">
+							{data.timeAgo} ago
+						</Icon>
+					</span>
+					<div className="grid flex-1 grid-cols-2 justify-end gap-2 min-[525px]:flex md:gap-4">
+						<DeleteNote id={data.note.id} />
+						<Button
+							asChild
+							className="min-[525px]:max-md:aspect-square min-[525px]:max-md:px-0"
+						>
+							<Link to="edit">
+								<Icon name="pencil-1" className="scale-125 max-md:scale-150">
+									<span className="max-md:hidden">Edit</span>
+								</Icon>
+							</Link>
+						</Button>
+					</div>
 				</div>
-			</div>
+			) : null}
 		</div>
 	)
 }
