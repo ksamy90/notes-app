@@ -49,6 +49,7 @@ import {
 import { sessionStorage } from './utils/session.server.ts'
 import { getTheme, setTheme, type Theme } from './utils/theme.server.ts'
 import { getToast, type Toast } from './utils/toast.server.ts'
+import { useOptionalUser } from './utils/user.ts'
 
 export const links: LinksFunction = () => {
 	return [
@@ -63,11 +64,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	const [csrfToken, csrfCookieHeader] = await csrf.commitToken(request)
 	const honeyProps = honeypot.getInputProps()
 	const { toast, headers: toastHeaders } = await getToast(request)
-	// 🐨 get the cookie session from the request
-	// 🐨 get the userId from the cookie session
-	// 🐨 if there's a userId, then get the user from the database
-	// 💰 you will want to specify a select. You'll need the id, username, name,
-	// and image's id
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
@@ -83,12 +79,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 				where: { id: userId },
 			})
 		: null
-	console.log(user)
 	return json(
 		{
 			username: os.userInfo().username,
-			// 🐨 add the user here (if there was no userId then the user can be null)
-			// 💰 don't forget to update the component below to access the user from the data.
 			user,
 			theme: getTheme(request),
 			toast,
@@ -170,7 +163,9 @@ function Document({
 function App() {
 	const data = useLoaderData<typeof loader>()
 	const theme = useTheme()
-	const user = data.user // 🐨 change "null as any" to data.user
+	// 🐨 you can leave this as-is, but if you want some consistency, change this
+	// to use the useOptionalUser hook instead.
+	const user = useOptionalUser()
 	const matches = useMatches()
 	const isOnSearchPage = matches.find(m => m.id === 'routes/users+/index')
 	return (
