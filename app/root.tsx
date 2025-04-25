@@ -38,11 +38,17 @@ import { EpicShop } from './epicshop.tsx'
 import fontStylestylesheetUrl from './styles/font.css'
 import tailwindStylesheetUrl from './styles/tailwind.css'
 import { csrf } from './utils/csrf.server.ts'
+import { prisma } from './utils/db.server.ts'
 import { getEnv } from './utils/env.server.ts'
 import { honeypot } from './utils/honeypot.server.ts'
-import { combineHeaders, invariantResponse } from './utils/misc.tsx'
+import {
+	combineHeaders,
+	getUserImgSrc,
+	invariantResponse,
+} from './utils/misc.tsx'
+import { sessionStorage } from './utils/session.server.ts'
 import { getTheme, setTheme, type Theme } from './utils/theme.server.ts'
-import { toastSessionStorage } from './utils/toast.server.ts'
+import { getToast, type Toast } from './utils/toast.server.ts'
 
 export const links: LinksFunction = () => {
 	return [
@@ -56,13 +62,33 @@ export const links: LinksFunction = () => {
 export async function loader({ request }: LoaderFunctionArgs) {
 	const [csrfToken, csrfCookieHeader] = await csrf.commitToken(request)
 	const honeyProps = honeypot.getInputProps()
-	const toastCookieSession = await toastSessionStorage.getSession(
+	const { toast, headers: toastHeaders } = await getToast(request)
+	// 🐨 get the cookie session from the request
+	// 🐨 get the userId from the cookie session
+	// 🐨 if there's a userId, then get the user from the database
+	// 💰 you will want to specify a select. You'll need the id, username, name,
+	// and image's id
+	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
-	const toast = toastCookieSession.get('toast')
+	const userId = cookieSession.get('userId')
+	const user = userId
+		? await prisma.user.findUnique({
+				select: {
+					id: true,
+					name: true,
+					username: true,
+					image: { select: { id: true } },
+				},
+				where: { id: userId },
+			})
+		: null
 	return json(
 		{
 			username: os.userInfo().username,
+			// 🐨 add the user here (if there was no userId then the user can be null)
+			// 💰 don't forget to update the component below to access the user from the data.
+			user,
 			theme: getTheme(request),
 			toast,
 			ENV: getEnv(),
@@ -70,14 +96,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 			honeyProps,
 		},
 		{
-			// 🐨 use "combineHeaders" to add another 'set-cookie' header and commit
-			// the session change here
 			headers: combineHeaders(
 				csrfCookieHeader ? { 'set-cookie': csrfCookieHeader } : null,
-				{
-					'set-cookie':
-						await toastSessionStorage.commitSession(toastCookieSession),
-				},
+				toastHeaders,
 			),
 		},
 	)
@@ -148,6 +169,7 @@ function Document({
 function App() {
 	const data = useLoaderData<typeof loader>()
 	const theme = useTheme()
+	const user = data.user // 🐨 change "null as any" to data.user
 	const matches = useMatches()
 	const isOnSearchPage = matches.find(m => m.id === 'routes/users+/index')
 	return (
@@ -164,9 +186,29 @@ function App() {
 						</div>
 					)}
 					<div className="flex items-center gap-10">
-						<Button asChild variant="default" size="sm">
-							<Link to="/login">Log In</Link>
-						</Button>
+						{user ? (
+							<div className="flex items-center gap-2">
+								<Button asChild variant="secondary">
+									<Link
+										to={`/users/${user.username}`}
+										className="flex items-center gap-2"
+									>
+										<img
+											className="h-8 w-8 rounded-full object-cover"
+											alt={user.name ?? user.username}
+											src={getUserImgSrc(user.image?.id)}
+										/>
+										<span className="hidden text-body-sm font-bold sm:block">
+											{user.name ?? user.username}
+										</span>
+									</Link>
+								</Button>
+							</div>
+						) : (
+							<Button asChild variant="default" size="sm">
+								<Link to="/login">Log In</Link>
+							</Button>
+						)}
 					</div>
 				</nav>
 			</header>
@@ -259,13 +301,8 @@ function ThemeSwitch({ userPreference }: { userPreference?: Theme }) {
 	)
 }
 
-function ShowToast({ toast }: { toast: any }) {
-	const { id, type, title, description } = toast as {
-		id: string
-		type: 'success' | 'message'
-		title: string
-		description: string
-	}
+function ShowToast({ toast }: { toast: Toast }) {
+	const { id, type, title, description } = toast
 	useEffect(() => {
 		setTimeout(() => {
 			showToast[type](title, { id, description })
