@@ -7,6 +7,7 @@ import {
 	type ActionFunctionArgs,
 	type LoaderFunctionArgs,
 	type LinksFunction,
+	redirect,
 } from '@remix-run/node'
 import {
 	Link,
@@ -79,6 +80,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
 				where: { id: userId },
 			})
 		: null
+	// 🐨 if there's a userId but no user then something's wrong.
+	// Let's delete destroy the session and redirect to the home page.
+	if (userId && !user) {
+		// something weird happened... The user is authenticated but we can't find
+		// them in the database. Maybe they were deleted? Let's log them out.
+		throw redirect('/', {
+			headers: {
+				'set-cookie': await sessionStorage.destroySession(cookieSession),
+			},
+		})
+	}
 	return json(
 		{
 			username: os.userInfo().username,
@@ -163,8 +175,6 @@ function Document({
 function App() {
 	const data = useLoaderData<typeof loader>()
 	const theme = useTheme()
-	// 🐨 you can leave this as-is, but if you want some consistency, change this
-	// to use the useOptionalUser hook instead.
 	const user = useOptionalUser()
 	const matches = useMatches()
 	const isOnSearchPage = matches.find(m => m.id === 'routes/users+/index')
