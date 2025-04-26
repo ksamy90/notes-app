@@ -11,11 +11,10 @@ import { AuthenticityTokenInput } from 'remix-utils/csrf/react'
 import { HoneypotInputs } from 'remix-utils/honeypot/react'
 import { z } from 'zod'
 import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
-import { ErrorList, Field } from '#app/components/forms.tsx'
+import { CheckboxField, ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
-// 🐨 import bcrypt from #app/utils/auth.server.ts
-import { bcrypt } from '#app/utils/auth.server.ts'
+import { bcrypt, getSessionExpirationDate } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
@@ -26,6 +25,7 @@ import { PasswordSchema, UsernameSchema } from '#app/utils/user-validation.ts'
 const LoginFormSchema = z.object({
 	username: UsernameSchema,
 	password: PasswordSchema,
+	remember: z.boolean().optional(),
 })
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -38,7 +38,6 @@ export async function action({ request }: ActionFunctionArgs) {
 				if (intent !== 'submit') return { ...data, user: null }
 
 				const userWithPassword = await prisma.user.findUnique({
-					// 🐨 include the password hash in this select
 					select: { id: true, password: { select: { hash: true } } },
 					where: { username: data.username },
 				})
@@ -50,12 +49,11 @@ export async function action({ request }: ActionFunctionArgs) {
 					return z.NEVER
 				}
 
-				// 🐨 use bcrypt.compare to compare the provided password with the hash
-				// 🐨 if it's not valid, then create the same error as above and return z.NEVER
 				const isValid = await bcrypt.compare(
 					data.password,
-					userWithPassword.password?.hash,
+					userWithPassword.password.hash,
 				)
+
 				if (!isValid) {
 					ctx.addIssue({
 						code: 'custom',
@@ -64,7 +62,6 @@ export async function action({ request }: ActionFunctionArgs) {
 					return z.NEVER
 				}
 
-				// 🐨 don't return the password hash here, just make a user which is an object with an id
 				return { ...data, user: { id: userWithPassword.id } }
 			}),
 		async: true,
@@ -81,7 +78,7 @@ export async function action({ request }: ActionFunctionArgs) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
-	const { user } = submission.value
+	const { user, remember } = submission.value
 
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
@@ -90,7 +87,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	return redirect('/', {
 		headers: {
-			'set-cookie': await sessionStorage.commitSession(cookieSession),
+			// 🐨 add an expires option to this commitSession call and set it to
+			// a date 30 days in the future if they checked the remember checkbox
+			// or undefined if they did not.
+			'set-cookie': await sessionStorage.commitSession(cookieSession, {
+				expires: remember ? getSessionExpirationDate() : undefined,
+			}),
 		},
 	})
 }
@@ -144,7 +146,16 @@ export default function LoginPage() {
 							/>
 
 							<div className="flex justify-between">
-								<div />
+								<CheckboxField
+									labelProps={{
+										htmlFor: fields.remember.id,
+										children: 'Remember me',
+									}}
+									buttonProps={conform.input(fields.remember, {
+										type: 'checkbox',
+									})}
+									errors={fields.remember.errors}
+								/>
 								<div>
 									<Link
 										to="/forgot-password"

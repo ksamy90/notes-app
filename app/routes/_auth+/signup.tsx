@@ -13,8 +13,7 @@ import { z } from 'zod'
 import { CheckboxField, ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
-// 🐨 import bcrypt from your new #app/utils/auth.server.ts file here
-import { bcrypt } from '#app/utils/auth.server.ts'
+import { bcrypt, getSessionExpirationDate } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
@@ -38,6 +37,7 @@ const SignupFormSchema = z
 			required_error:
 				'You must agree to the terms of service and privacy policy',
 		}),
+		remember: z.boolean().optional(),
 	})
 	.superRefine(({ confirmPassword, password }, ctx) => {
 		if (confirmPassword !== password) {
@@ -68,7 +68,6 @@ export async function action({ request }: ActionFunctionArgs) {
 				return
 			}
 		}).transform(async data => {
-			// 🐨 retrieve the password they entered from data here as well
 			const { username, email, name, password } = data
 
 			const user = await prisma.user.create({
@@ -77,7 +76,6 @@ export async function action({ request }: ActionFunctionArgs) {
 					email: email.toLowerCase(),
 					username: username.toLowerCase(),
 					name,
-					// 🐨 create a password here using bcrypt.hash (the async version)
 					password: {
 						create: {
 							hash: await bcrypt.hash(password, 10),
@@ -98,7 +96,7 @@ export async function action({ request }: ActionFunctionArgs) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
-	const { user } = submission.value
+	const { user, remember } = submission.value
 
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
@@ -107,7 +105,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	return redirect('/', {
 		headers: {
-			'set-cookie': await sessionStorage.commitSession(cookieSession),
+			// 🐨 add an expires option to this commitSession call and set it to
+			// a date 30 days in the future if they checked the remember checkbox
+			// or undefined if they did not.
+			'set-cookie': await sessionStorage.commitSession(cookieSession, {
+				expires: remember ? getSessionExpirationDate() : undefined,
+			}),
 		},
 	})
 }
@@ -206,6 +209,14 @@ export default function SignupRoute() {
 							{ type: 'checkbox' },
 						)}
 						errors={fields.agreeToTermsOfServiceAndPrivacyPolicy.errors}
+					/>
+					<CheckboxField
+						labelProps={{
+							htmlFor: fields.remember.id,
+							children: 'Remember me',
+						}}
+						buttonProps={conform.input(fields.remember, { type: 'checkbox' })}
+						errors={fields.remember.errors}
 					/>
 
 					<ErrorList errors={form.errors} id={form.errorId} />
