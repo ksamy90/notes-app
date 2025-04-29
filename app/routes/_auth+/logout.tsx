@@ -1,5 +1,5 @@
 import { type ActionFunctionArgs, redirect } from '@remix-run/node'
-import { validateCSRF } from '#app/utils/csrf.server.ts'
+// import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { sessionStorage } from '#app/utils/session.server.ts'
 
 export async function loader() {
@@ -11,8 +11,8 @@ export async function loader() {
 
 export async function action({ request }: ActionFunctionArgs) {
 	// 🐨 get the user's session from the request that's passed to the action
-	const formData = await request.formData()
-	await validateCSRF(formData, request.headers)
+	// const formData = await request.formData()
+	// await validateCSRF(formData, request.headers)
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
