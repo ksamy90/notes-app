@@ -28,9 +28,6 @@ export async function getUserId(request: Request) {
 	return user.id
 }
 
-// 🐨 export a requireUserId function here that looks a lot like the requireAnonymous
-// except it returns the userId if it exists and throws a redirect to the login page
-// if no userId exists in the session.
 export async function requireUserId(request: Request) {
 	const userId = await getUserId(request)
 	if (!userId) {
@@ -44,6 +41,18 @@ export async function requireAnonymous(request: Request) {
 	if (userId) {
 		throw redirect('/')
 	}
+}
+
+export async function requireUser(request: Request) {
+	const userId = await requireUserId(request)
+	const user = await prisma.user.findUnique({
+		select: { id: true, username: true },
+		where: { id: userId },
+	})
+	if (!user) {
+		throw await logout({ request })
+	}
+	return user
 }
 
 export async function login({

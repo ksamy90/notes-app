@@ -31,7 +31,13 @@ import { StatusButton } from '#app/components/ui/status-button.tsx'
 import { Textarea } from '#app/components/ui/textarea.tsx'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
-import { cn, getNoteImgSrc, useIsPending } from '#app/utils/misc.tsx'
+import {
+	cn,
+	getNoteImgSrc,
+	invariantResponse,
+	useIsPending,
+} from '#app/utils/misc.tsx'
+import { requireUser } from '#app/utils/auth.server.ts'
 
 const titleMinLength = 1
 const titleMaxLength = 100
@@ -73,6 +79,14 @@ const NoteEditorSchema = z.object({
 })
 
 export async function action({ request, params }: ActionFunctionArgs) {
+	// 🐨 require the user and check that the user.username is equal to params.username.
+	// If not, then throw a 403 response
+	// 💰 you can use invariantResponse for this.
+	const user = await requireUser(request)
+	invariantResponse(user.username === params.username, 'Not authorized', {
+		status: 403,
+	})
+
 	const formData = await parseMultipartFormData(
 		request,
 		createMemoryUploadHandler({ maxPartSize: MAX_UPLOAD_SIZE }),
@@ -134,6 +148,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 		select: { id: true, owner: { select: { username: true } } },
 		where: { id: noteId ?? '__new_note__' },
 		create: {
+			// 🐨 change this to ownerId: user.id,
 			owner: { connect: { username: params.username } },
 			title,
 			content,

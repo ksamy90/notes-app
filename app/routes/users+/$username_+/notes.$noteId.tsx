@@ -21,6 +21,7 @@ import { ErrorList } from '#app/components/forms.tsx'
 import { Button } from '#app/components/ui/button.tsx'
 import { Icon } from '#app/components/ui/icon.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
+import { requireUser } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import {
@@ -67,6 +68,10 @@ const DeleteFormSchema = z.object({
 })
 
 export async function action({ request, params }: ActionFunctionArgs) {
+	const user = await requireUser(request)
+	invariantResponse(user.username === params.username, 'Not authorized', {
+		status: 403,
+	})
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
 	const submission = parse(formData, {
@@ -83,7 +88,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
 	const note = await prisma.note.findFirst({
 		select: { id: true, owner: { select: { username: true } } },
-		where: { id: noteId, owner: { username: params.username } },
+		// 🐨 you can switch this to: "ownerId: user.id" which should make the
+		where: { id: noteId, ownerId: user.id },
 	})
 	invariantResponse(note, 'Not found', { status: 404 })
 
@@ -98,9 +104,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
 export default function NoteRoute() {
 	const data = useLoaderData<typeof loader>()
-	// 🐨 get the logged in user via useOptionalUser, then determine whether the
-	// logged in user is the owner by comparing the owner's id to the logged in
-	// user's id.
 	const user = useOptionalUser()
 	const isOwner = user?.id === data.note.ownerId
 
