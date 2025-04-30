@@ -13,7 +13,11 @@ import { z } from 'zod'
 import { CheckboxField, ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
-import { bcrypt, getSessionExpirationDate } from '#app/utils/auth.server.ts'
+import {
+	getSessionExpirationDate,
+	signup,
+	userIdKey,
+} from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
@@ -49,7 +53,11 @@ const SignupFormSchema = z
 		}
 	})
 
+// 🐨 create a loader here that uses the requireAnonymous utility and returns
+// an empty object of json.
+
 export async function action({ request }: ActionFunctionArgs) {
+	// 🐨 add the requireAnonymous utility here
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
 	checkHoneypot(formData)
@@ -68,22 +76,7 @@ export async function action({ request }: ActionFunctionArgs) {
 				return
 			}
 		}).transform(async data => {
-			const { username, email, name, password } = data
-
-			const user = await prisma.user.create({
-				select: { id: true },
-				data: {
-					email: email.toLowerCase(),
-					username: username.toLowerCase(),
-					name,
-					password: {
-						create: {
-							hash: await bcrypt.hash(password, 10),
-						},
-					},
-				},
-			})
-
+			const user = await signup(data)
 			return { ...data, user }
 		}),
 		async: true,
@@ -101,13 +94,10 @@ export async function action({ request }: ActionFunctionArgs) {
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
-	cookieSession.set('userId', user.id)
+	cookieSession.set(userIdKey, user.id)
 
 	return redirect('/', {
 		headers: {
-			// 🐨 add an expires option to this commitSession call and set it to
-			// a date 30 days in the future if they checked the remember checkbox
-			// or undefined if they did not.
 			'set-cookie': await sessionStorage.commitSession(cookieSession, {
 				expires: remember ? getSessionExpirationDate() : undefined,
 			}),
