@@ -26,9 +26,51 @@ async function seed() {
 
 	console.time('🧹 Cleaned up the database...')
 	await prisma.user.deleteMany()
+	await prisma.role.deleteMany()
+	await prisma.permission.deleteMany()
 	console.timeEnd('🧹 Cleaned up the database...')
 
-	const totalUsers = 5
+	// SETUP PERMISSIONS CONSTRAINTS
+	const entities = ['user', 'note'] as const
+	const actions = ['create', 'read', 'update', 'delete'] as const
+	const accesses = ['own', 'any'] as const
+
+	for (const entity of entities) {
+		for (const action of actions) {
+			for (const access of accesses) {
+				await prisma.permission.create({ data: { entity, action, access } })
+			}
+		}
+	}
+
+	console.time('👑 Created roles...')
+	await prisma.role.create({
+		data: {
+			name: 'admin',
+			permissions: {
+				connect: await prisma.permission.findMany({
+					select: { id: true },
+					where: { access: 'any' },
+				}),
+			},
+		},
+	})
+	await prisma.role.create({
+		data: {
+			name: 'user',
+			permissions: {
+				connect: await prisma.permission.findMany({
+					select: { id: true },
+					where: { access: 'own' },
+				}),
+			},
+		},
+	})
+	console.timeEnd('👑 Created roles...')
+
+	console.log('✅ all done')
+
+	const totalUsers = 4
 	console.time(`👤 Created ${totalUsers} users...`)
 	const noteImages = await Promise.all([
 		img({
@@ -89,11 +131,13 @@ async function seed() {
 					...userData,
 					password: { create: createPassword(userData.username) },
 					image: { create: userImages[index % 10] },
+					// 🐨 connect the 'user' role to these users
+					roles: { connect: { name: 'user' } },
 					notes: {
 						create: Array.from({
-							length: faker.number.int({ min: 20, max: 30 }),
+							length: faker.number.int({ min: 2, max: 4 }),
 						}).map(() => ({
-							title: faker.lorem.sentence(),
+							title: faker.lorem.sentence().slice(0, 20).trim(),
 							content: faker.lorem.paragraphs(),
 							images: {
 								create: Array.from({
@@ -114,7 +158,7 @@ async function seed() {
 	}
 	console.timeEnd(`👤 Created ${totalUsers} users...`)
 
-	console.time(`🐨 Created user "kody"`)
+	console.time(`🐨 Created admin user "kody"`)
 
 	const kodyImages = await promiseHash({
 		kodyUser: img({ filepath: './tests/fixtures/images/user/kody.png' }),
@@ -152,11 +196,13 @@ async function seed() {
 	await prisma.user.create({
 		select: { id: true },
 		data: {
+			id: 'clm7vpwdy001ix76hu0czjiqs',
 			email: 'kody@kcd.dev',
 			username: 'kody',
 			name: 'Kody',
 			image: { create: kodyImages.kodyUser },
 			password: { create: createPassword('kodylovesyou') },
+			roles: { connect: [{ name: 'admin' }, { name: 'user' }] },
 			notes: {
 				create: [
 					{
@@ -258,7 +304,7 @@ async function seed() {
 			},
 		},
 	})
-	console.timeEnd(`🐨 Created user "kody"`)
+	console.timeEnd(`🐨 Created admin user "kody"`)
 
 	console.timeEnd(`🌱 Database has been seeded`)
 }
