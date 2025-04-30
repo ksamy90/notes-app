@@ -28,9 +28,17 @@ export async function getUserId(request: Request) {
 	return user.id
 }
 
-// 🐨 create a function called `requireAnonymous` here that takes a request
-// 🐨 get the user's Id from the session using getUserId
-// 🐨 if there's a userId, then throw a redirect to '/' (otherwise do nothing)
+// 🐨 export a requireUserId function here that looks a lot like the requireAnonymous
+// except it returns the userId if it exists and throws a redirect to the login page
+// if no userId exists in the session.
+export async function requireUserId(request: Request) {
+	const userId = await getUserId(request)
+	if (!userId) {
+		throw redirect('/login')
+	}
+	return userId
+}
+
 export async function requireAnonymous(request: Request) {
 	const userId = await getUserId(request)
 	if (userId) {
