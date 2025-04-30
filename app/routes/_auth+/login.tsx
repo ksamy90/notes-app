@@ -4,12 +4,13 @@ import {
 	json,
 	redirect,
 	type ActionFunctionArgs,
-	type MetaFunction,
 	type LoaderFunctionArgs,
+	type MetaFunction,
 } from '@remix-run/node'
-import { Form, Link, useActionData } from '@remix-run/react'
+import { Form, Link, useActionData, useSearchParams } from '@remix-run/react'
 import { AuthenticityTokenInput } from 'remix-utils/csrf/react'
 import { HoneypotInputs } from 'remix-utils/honeypot/react'
+import { safeRedirect } from 'remix-utils/safe-redirect'
 import { z } from 'zod'
 import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 import { CheckboxField, ErrorList, Field } from '#app/components/forms.tsx'
@@ -30,18 +31,17 @@ import { PasswordSchema, UsernameSchema } from '#app/utils/user-validation.ts'
 const LoginFormSchema = z.object({
 	username: UsernameSchema,
 	password: PasswordSchema,
+	// 🐨 add config for a redirectTo (optional string)
+	redirectTo: z.string().optional(),
 	remember: z.boolean().optional(),
 })
 
-// 🐨 create a loader here that uses the requireAnonymous utility and returns
-// an empty object of json.
 export async function loader({ request }: LoaderFunctionArgs) {
 	await requireAnonymous(request)
 	return json({})
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	// 🐨 add the requireAnonymous utility here
 	await requireAnonymous(request)
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
@@ -76,14 +76,17 @@ export async function action({ request }: ActionFunctionArgs) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
-	const { user, remember } = submission.value
+	// 🐨 get the redirectTo from the submission
+	const { user, remember, redirectTo } = submission.value
 
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
 	cookieSession.set(userIdKey, user.id)
 
-	return redirect('/', {
+	// 🐨 redirect to the redirectTo
+	// 🦉 Make sure to use the safeRedirect utility from remix-utils
+	return redirect(safeRedirect(redirectTo), {
 		headers: {
 			'set-cookie': await sessionStorage.commitSession(cookieSession, {
 				expires: remember ? getSessionExpirationDate() : undefined,
@@ -95,10 +98,16 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function LoginPage() {
 	const actionData = useActionData<typeof action>()
 	const isPending = useIsPending()
+	// 🐨 get the search params via useSearchParams from @remix-run/react
+	// 🐨 get the redirectTo from the search params
+	const [searchParams] = useSearchParams()
+	const redirectTo = searchParams.get('redirectTo')
 
 	const [form, fields] = useForm({
 		id: 'login-form',
 		constraint: getFieldsetConstraint(LoginFormSchema),
+		// 🐨 add a defaultValue object with the redirectTo
+		defaultValue: { redirectTo },
 		lastSubmission: actionData?.submission,
 		onValidate({ formData }) {
 			return parse(formData, { schema: LoginFormSchema })
@@ -161,6 +170,11 @@ export default function LoginPage() {
 								</div>
 							</div>
 
+							{/* 🐨 add a hidden input here for the redirectTo */}
+							<input
+								{...conform.input(fields.redirectTo, { type: 'hidden' })}
+							/>
+
 							<ErrorList errors={form.errors} id={form.errorId} />
 
 							<div className="flex items-center justify-between gap-6 pt-3">
@@ -178,6 +192,7 @@ export default function LoginPage() {
 						</Form>
 						<div className="flex items-center justify-center gap-2 pt-6">
 							<span className="text-muted-foreground">New here?</span>
+							{/* 🐨 update this to attribute to include the redirectTo if it exists */}
 							<Link to="/signup">Create an account</Link>
 						</div>
 					</div>
