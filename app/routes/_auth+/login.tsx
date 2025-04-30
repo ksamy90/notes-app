@@ -5,6 +5,7 @@ import {
 	redirect,
 	type ActionFunctionArgs,
 	type MetaFunction,
+	type LoaderFunctionArgs,
 } from '@remix-run/node'
 import { Form, Link, useActionData } from '@remix-run/react'
 import { AuthenticityTokenInput } from 'remix-utils/csrf/react'
@@ -17,6 +18,7 @@ import { StatusButton } from '#app/components/ui/status-button.tsx'
 import {
 	getSessionExpirationDate,
 	login,
+	requireAnonymous,
 	userIdKey,
 } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
@@ -33,9 +35,14 @@ const LoginFormSchema = z.object({
 
 // 🐨 create a loader here that uses the requireAnonymous utility and returns
 // an empty object of json.
+export async function loader({ request }: LoaderFunctionArgs) {
+	await requireAnonymous(request)
+	return json({})
+}
 
 export async function action({ request }: ActionFunctionArgs) {
 	// 🐨 add the requireAnonymous utility here
+	await requireAnonymous(request)
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
 	checkHoneypot(formData)

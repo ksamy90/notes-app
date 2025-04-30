@@ -2,6 +2,7 @@ import { conform, useForm } from '@conform-to/react'
 import { getFieldsetConstraint, parse } from '@conform-to/zod'
 import {
 	json,
+	type LoaderFunctionArgs,
 	redirect,
 	type ActionFunctionArgs,
 	type MetaFunction,
@@ -15,6 +16,7 @@ import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
 import {
 	getSessionExpirationDate,
+	requireAnonymous,
 	signup,
 	userIdKey,
 } from '#app/utils/auth.server.ts'
@@ -55,9 +57,14 @@ const SignupFormSchema = z
 
 // 🐨 create a loader here that uses the requireAnonymous utility and returns
 // an empty object of json.
+export async function loader({ request }: LoaderFunctionArgs) {
+	await requireAnonymous(request)
+	return json({})
+}
 
 export async function action({ request }: ActionFunctionArgs) {
 	// 🐨 add the requireAnonymous utility here
+	await requireAnonymous(request)
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
 	checkHoneypot(formData)

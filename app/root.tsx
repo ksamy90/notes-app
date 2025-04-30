@@ -4,13 +4,11 @@ import { parse } from '@conform-to/zod'
 import { cssBundleHref } from '@remix-run/css-bundle'
 import {
 	json,
-	redirect,
 	type ActionFunctionArgs,
 	type LoaderFunctionArgs,
 	type LinksFunction,
 } from '@remix-run/node'
 import {
-	Form,
 	Link,
 	Links,
 	LiveReload,
@@ -21,12 +19,10 @@ import {
 	useFetcher,
 	useFetchers,
 	useLoaderData,
-	useLocation,
 	useMatches,
-	useSubmit,
 	type MetaFunction,
 } from '@remix-run/react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { AuthenticityTokenProvider } from 'remix-utils/csrf/react'
 import { HoneypotProvider } from 'remix-utils/honeypot/react'
 import { Toaster, toast as showToast } from 'sonner'
@@ -36,21 +32,12 @@ import { GeneralErrorBoundary } from './components/error-boundary.tsx'
 import { ErrorList } from './components/forms.tsx'
 import { SearchBar } from './components/search-bar.tsx'
 import { Spacer } from './components/spacer.tsx'
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from './components/ui/alert-dialog.tsx'
 import { Button } from './components/ui/button.tsx'
 import { Icon } from './components/ui/icon.tsx'
 import { EpicShop } from './epicshop.tsx'
 import fontStylestylesheetUrl from './styles/font.css'
 import tailwindStylesheetUrl from './styles/tailwind.css'
+import { getUserId } from './utils/auth.server.ts'
 import { csrf } from './utils/csrf.server.ts'
 import { prisma } from './utils/db.server.ts'
 import { getEnv } from './utils/env.server.ts'
@@ -60,7 +47,6 @@ import {
 	getUserImgSrc,
 	invariantResponse,
 } from './utils/misc.tsx'
-import { sessionStorage } from './utils/session.server.ts'
 import { getTheme, setTheme, type Theme } from './utils/theme.server.ts'
 import { getToast, type Toast } from './utils/toast.server.ts'
 import { useOptionalUser } from './utils/user.ts'
@@ -78,12 +64,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	const [csrfToken, csrfCookieHeader] = await csrf.commitToken(request)
 	const honeyProps = honeypot.getInputProps()
 	const { toast, headers: toastHeaders } = await getToast(request)
-	const cookieSession = await sessionStorage.getSession(
-		request.headers.get('cookie'),
-	)
-	const userId = cookieSession.get('userId')
+	const userId = await getUserId(request)
 	const user = userId
-		? await prisma.user.findUnique({
+		? await prisma.user.findUniqueOrThrow({
 				select: {
 					id: true,
 					name: true,
@@ -93,15 +76,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 				where: { id: userId },
 			})
 		: null
-	if (userId && !user) {
-		// something weird happened... The user is authenticated but we can't find
-		// them in the database. Maybe they were deleted? Let's log them out.
-		throw redirect('/', {
-			headers: {
-				'set-cookie': await sessionStorage.destroySession(cookieSession),
-			},
-		})
-	}
 	return json(
 		{
 			username: os.userInfo().username,
@@ -152,14 +126,11 @@ export async function action({ request }: ActionFunctionArgs) {
 function Document({
 	children,
 	theme,
-	env, // 🐨 add an isLoggedIn boolean that defaults to false
-	isLoggedIn = false,
+	env,
 }: {
 	children: React.ReactNode
 	theme?: Theme
 	env?: Record<string, string>
-	// 🐨 add the type for isLoggedIn:
-	isLoggedIn?: boolean
 }) {
 	return (
 		<html lang="en" className={`${theme} h-full overflow-x-hidden`}>
@@ -176,8 +147,6 @@ function Document({
 						__html: `window.ENV = ${JSON.stringify(env)}`,
 					}}
 				/>
-				{/* 🐨 if isLoggedIn is true, then render the LogoutTimer */}
-				{isLoggedIn ? <LogoutTimer /> : null}
 				<Toaster closeButton position="top-center" />
 				<ScrollRestoration />
 				<Scripts />
@@ -195,8 +164,7 @@ function App() {
 	const matches = useMatches()
 	const isOnSearchPage = matches.find(m => m.id === 'routes/users+/index')
 	return (
-		// 🐨 pass isLoggedIn (true if the user exists, false if not)
-		<Document isLoggedIn={Boolean(user)} theme={theme} env={data.ENV}>
+		<Document theme={theme} env={data.ENV}>
 			<header className="container px-6 py-4 sm:px-8 sm:py-6">
 				<nav className="flex items-center justify-between gap-4 sm:gap-6">
 					<Link to="/">
@@ -321,87 +289,6 @@ function ThemeSwitch({ userPreference }: { userPreference?: Theme }) {
 			</div>
 			<ErrorList errors={form.errors} id={form.errorId} />
 		</fetcher.Form>
-	)
-}
-
-// 💣 you can remove this eslint line once you've rendered the LogoutTimer
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LogoutTimer() {
-	const [status, setStatus] = useState<'idle' | 'show-modal'>('idle')
-	// 🐨 bring in the location via useLocation so we can access location.key
-	// 🐨 get a submit function via useSubmit
-	// 🦉 normally you'd want these numbers to be much higher, but for the purpose
-	const location = useLocation()
-	const submit = useSubmit()
-	// of this exercise, we'll make it short:
-	const logoutTime = 13000
-	const modalTime = 10000
-	// 🦉 here's what would be more likely:
-	// const logoutTime = 1000 * 60 * 60;
-	// const modalTime = logoutTime - 1000 * 60 * 2;
-	const modalTimer = useRef<ReturnType<typeof setTimeout>>()
-	const logoutTimer = useRef<ReturnType<typeof setTimeout>>()
-
-	const logout = useCallback(() => {
-		// 🐨 call submit in here. The submit body can be null,
-		// but the requestInit should be method POST and action '/logout'
-		submit(null, { method: 'POST', action: '/logout' })
-	}, [submit])
-
-	const cleanupTimers = useCallback(() => {
-		clearTimeout(modalTimer.current)
-		clearTimeout(logoutTimer.current)
-	}, [])
-
-	const resetTimers = useCallback(() => {
-		cleanupTimers()
-		modalTimer.current = setTimeout(() => {
-			setStatus('show-modal')
-		}, modalTime)
-		logoutTimer.current = setTimeout(logout, logoutTime)
-	}, [cleanupTimers, logout, logoutTime, modalTime])
-
-	useEffect(
-		() => resetTimers(),
-		[
-			resetTimers,
-			// 🐨 whenever the location changes, we want to reset the timers, so you
-			// can add location.key to this array:
-			location.key,
-		],
-	)
-	useEffect(() => cleanupTimers, [cleanupTimers])
-
-	function closeModal() {
-		setStatus('idle')
-		resetTimers()
-	}
-
-	return (
-		<AlertDialog
-			aria-label="Pending Logout Notification"
-			open={status === 'show-modal'}
-		>
-			<AlertDialogContent>
-				<AlertDialogHeader>
-					<AlertDialogTitle>Are you still there?</AlertDialogTitle>
-				</AlertDialogHeader>
-				<AlertDialogDescription>
-					You are going to be logged out due to inactivity. Close this modal to
-					stay logged in.
-				</AlertDialogDescription>
-				<AlertDialogFooter className="flex items-end gap-8">
-					<AlertDialogCancel onClick={closeModal}>
-						Remain Logged In
-					</AlertDialogCancel>
-					{/* 🐨 make sure to set the method and action on this form so clicking
-					logout submits a POST to the /logout route. */}
-					<Form method="POST" action="/logout">
-						<AlertDialogAction type="submit">Logout</AlertDialogAction>
-					</Form>
-				</AlertDialogFooter>
-			</AlertDialogContent>
-		</AlertDialog>
 	)
 }
 
