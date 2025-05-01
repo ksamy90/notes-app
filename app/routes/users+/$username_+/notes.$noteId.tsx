@@ -29,13 +29,13 @@ import {
 	invariantResponse,
 	useIsPending,
 } from '#app/utils/misc.tsx'
-import { redirectWithToast } from '#app/utils/toast.server.ts'
-import { useOptionalUser } from '#app/utils/user.ts'
-import { type loader as notesLoader } from './notes.tsx'
 import {
 	requireUserWithPermission,
 	userHasPermission,
 } from '#app/utils/permissions.ts'
+import { redirectWithToast } from '#app/utils/toast.server.ts'
+import { useOptionalUser } from '#app/utils/user.ts'
+import { type loader as notesLoader } from './notes.tsx'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
 	const note = await prisma.note.findUnique({
