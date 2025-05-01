@@ -32,11 +32,12 @@ import {
 import { redirectWithToast } from '#app/utils/toast.server.ts'
 import { useOptionalUser } from '#app/utils/user.ts'
 import { type loader as notesLoader } from './notes.tsx'
+import {
+	requireUserWithPermission,
+	userHasPermission,
+} from '#app/utils/permissions.ts'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-	// 🐨 get the user id from the request (remember, unauthenticated users should
-	// be able to see these notes too, so use getUserId instead of requireUserId).
-	const userId = await getUserId(request)
 	const note = await prisma.note.findUnique({
 		where: { id: params.noteId },
 		select: {
@@ -59,37 +60,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 	const date = new Date(note.updatedAt)
 	const timeAgo = formatDistanceToNow(date)
 
-	// 💰 this query is a little tricky if you're unfamiliar with Prisma so make
-	// sure to check the example in the instructions.
-	// 🐨 get the permission here. If the userId does not exist, don't bother,
-	// as the permission should just be null. If it does though, get the
-	// permission where "some" of the permission's roles have "some" users with the userId
-	// 📜 https://www.prisma.io/docs/reference/api-reference/prisma-client-reference#some
-	// 💰 you have the note.ownerId, so you can use that to decide whether you
-	// should be looking for "access: 'own'" or "access: 'any'".
-	const permission = userId
-		? await prisma.permission.findFirst({
-				select: { id: true },
-				where: {
-					roles: {
-						some: {
-							users: {
-								some: { id: userId },
-							},
-						},
-					},
-					entity: 'note',
-					action: 'delete',
-					access: note.ownerId === userId ? 'own' : 'any',
-				},
-			})
-		: null
-
 	return json({
 		note,
 		timeAgo,
-		// 🐨 set canDelete to whether there is a matching permission
-		canDelete: Boolean(permission),
 	})
 }
 
@@ -98,12 +71,8 @@ const DeleteFormSchema = z.object({
 	noteId: z.string(),
 })
 
-export async function action({ request, params }: ActionFunctionArgs) {
+export async function action({ request }: ActionFunctionArgs) {
 	const user = await requireUser(request)
-	// 💣 since admins can delete notes, remove this
-	/* invariantResponse(user.username === params.username, 'Not authorized', {
-		status: 403,
-	}) */
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
 	const submission = parse(formData, {
@@ -119,35 +88,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
 	const { noteId } = submission.value
 
 	const note = await prisma.note.findFirst({
-		// 🐨 now we need the ownerId as well so we can determine whether the current user is the owner
 		select: { id: true, ownerId: true, owner: { select: { username: true } } },
-		// 💣 since admins can delete notes, we can't filter by userId anymore, remove that
 		where: { id: noteId },
 	})
 	invariantResponse(note, 'Not found', { status: 404 })
 
-	// 🐨 do an identical permission query to the one above.
-	const permission = await prisma.permission.findFirst({
-		select: { id: true },
-		where: {
-			roles: { some: { users: { some: { id: user.id } } } },
-			entity: 'note',
-			action: 'delete',
-			access: note.ownerId === user.id ? 'own' : 'any',
-		},
-	})
-
-	// 🐨 if there is no permission, then throw a response with a 403 status code
-	// which you can handle in the error boundary below
-	if (!permission) {
-		throw json(
-			{
-				error: 'Unauthorized',
-				message: `Unauthorized: requires permission delete:note`,
-			},
-			{ status: 403 },
-		)
-	}
+	const isOwner = note.ownerId === user.id
+	await requireUserWithPermission(
+		request,
+		isOwner ? `delete:note:own` : `delete:note:any`,
+	)
 
 	await prisma.note.delete({ where: { id: note.id } })
 
@@ -162,8 +112,13 @@ export default function NoteRoute() {
 	const data = useLoaderData<typeof loader>()
 	const user = useOptionalUser()
 	const isOwner = user?.id === data.note.ownerId
-	// 🐨 get this value from the loader data
-	const canDelete = data.canDelete
+	// 🐨 we no longer are using the loader to determine whether the user has
+	// permission to delete. We load all the user's permissions in the root loader
+	// and can use the userHasPermission utility. Use that here:
+	const canDelete = userHasPermission(
+		user,
+		isOwner ? `delete:note:own` : `delete:note:any`,
+	)
 	const displayBar = canDelete || isOwner
 
 	return (
@@ -273,7 +228,6 @@ export function ErrorBoundary() {
 	return (
 		<GeneralErrorBoundary
 			statusHandlers={{
-				// 🐨 add a 403 handler here and just say they're not allowed.
 				403: () => <p>You are not allowed to do that</p>,
 				404: ({ params }) => (
 					<p>No note with the id "{params.noteId}" exists</p>
