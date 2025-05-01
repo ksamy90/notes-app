@@ -274,6 +274,7 @@ export function ErrorBoundary() {
 		<GeneralErrorBoundary
 			statusHandlers={{
 				// 🐨 add a 403 handler here and just say they're not allowed.
+				403: () => <p>You are not allowed to do that</p>,
 				404: ({ params }) => (
 					<p>No note with the id "{params.noteId}" exists</p>
 				),
