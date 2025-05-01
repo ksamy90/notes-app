@@ -12,29 +12,35 @@ export const getSessionExpirationDate = () =>
 
 // 🐨 update this from 'userId' to 'sessionId'
 // but don't change the variable name just yet. We'll do that in the next step
-export const userIdKey = 'userId'
+export const userIdKey = 'sessionId'
 
 export async function getUserId(request: Request) {
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
 	// 🐨 this isn't a userId anymore, it's a sessionId
-	const userId = cookieSession.get(userIdKey)
-	if (!userId) return null
+	const sessionId = cookieSession.get(userIdKey)
+	if (!sessionId) return null
 	// 🐨 query the session table instead. Do a subquery to get the user id
 	// 💰 make sure to only select sessions that have not yet expired!
 	// 📜 https://www.prisma.io/docs/reference/api-reference/prisma-client-reference#gt
-	const user = await prisma.user.findUnique({
-		select: { id: true },
-		where: { id: userId },
+	const session = await prisma.session.findUnique({
+		select: { user: { select: { id: true } } },
+		where: { id: sessionId, expirationDate: { gt: new Date() } },
 	})
 	// 🐨 if the session you get back doesn't exist or doesn't have a user, then
 	// we'll log the user out.
-	if (!user) {
-		throw await logout({ request })
+	if (!session?.user) {
+		// perhaps user was deleted
+		cookieSession.unset(userIdKey)
+		throw redirect('/', {
+			headers: {
+				'set-cookie': await sessionStorage.commitSession(cookieSession),
+			},
+		})
 	}
 	// 🐨 return the user id from the session
-	return user.id
+	return session.user.id
 }
 
 export async function requireUserId(
