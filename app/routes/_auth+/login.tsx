@@ -16,12 +16,7 @@ import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 import { CheckboxField, ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
-import {
-	getSessionExpirationDate,
-	login,
-	requireAnonymous,
-	userIdKey,
-} from '#app/utils/auth.server.ts'
+import { login, requireAnonymous, sessionKey } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
 import { useIsPending } from '#app/utils/misc.tsx'
@@ -31,7 +26,6 @@ import { PasswordSchema, UsernameSchema } from '#app/utils/user-validation.ts'
 const LoginFormSchema = z.object({
 	username: UsernameSchema,
 	password: PasswordSchema,
-	// 🐨 add config for a redirectTo (optional string)
 	redirectTo: z.string().optional(),
 	remember: z.boolean().optional(),
 })
@@ -49,10 +43,12 @@ export async function action({ request }: ActionFunctionArgs) {
 	const submission = await parse(formData, {
 		schema: intent =>
 			LoginFormSchema.transform(async (data, ctx) => {
-				if (intent !== 'submit') return { ...data, user: null }
+				// 🐨 this should be a session, not a user
+				if (intent !== 'submit') return { ...data, session: null }
 
-				const user = await login(data)
-				if (!user) {
+				// 🐨 this returns a session, not a user
+				const session = await login(data)
+				if (!session) {
 					ctx.addIssue({
 						code: 'custom',
 						message: 'Invalid username or password',
@@ -60,7 +56,8 @@ export async function action({ request }: ActionFunctionArgs) {
 					return z.NEVER
 				}
 
-				return { ...data, user }
+				// 🐨 this returns a session, not a user
+				return { ...data, session }
 			}),
 		async: true,
 	})
@@ -72,24 +69,26 @@ export async function action({ request }: ActionFunctionArgs) {
 		delete submission.value?.password
 		return json({ status: 'idle', submission } as const)
 	}
-	if (!submission.value?.user) {
+	// 🐨 this is a session, not a user
+	if (!submission.value?.session) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
-	// 🐨 get the redirectTo from the submission
-	const { user, remember, redirectTo } = submission.value
+	// 🐨 this is a session, not a user
+	const { session, remember, redirectTo } = submission.value
 
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
-	cookieSession.set(userIdKey, user.id)
+	// 🐨 this is the sessionKey and a session, not userIdKey and user
+	cookieSession.set(sessionKey, session.id)
 
-	// 🐨 redirect to the redirectTo
-	// 🦉 Make sure to use the safeRedirect utility from remix-utils
 	return redirect(safeRedirect(redirectTo), {
 		headers: {
 			'set-cookie': await sessionStorage.commitSession(cookieSession, {
-				expires: remember ? getSessionExpirationDate() : undefined,
+				// 🐨 the expiration date is now available on the session and doesn't
+				// need to be computed here.
+				expires: remember ? session.expirationDate : undefined,
 			}),
 		},
 	})
@@ -98,15 +97,12 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function LoginPage() {
 	const actionData = useActionData<typeof action>()
 	const isPending = useIsPending()
-	// 🐨 get the search params via useSearchParams from @remix-run/react
-	// 🐨 get the redirectTo from the search params
 	const [searchParams] = useSearchParams()
 	const redirectTo = searchParams.get('redirectTo')
 
 	const [form, fields] = useForm({
 		id: 'login-form',
 		constraint: getFieldsetConstraint(LoginFormSchema),
-		// 🐨 add a defaultValue object with the redirectTo
 		defaultValue: { redirectTo },
 		lastSubmission: actionData?.submission,
 		onValidate({ formData }) {
@@ -170,11 +166,9 @@ export default function LoginPage() {
 								</div>
 							</div>
 
-							{/* 🐨 add a hidden input here for the redirectTo */}
 							<input
 								{...conform.input(fields.redirectTo, { type: 'hidden' })}
 							/>
-
 							<ErrorList errors={form.errors} id={form.errorId} />
 
 							<div className="flex items-center justify-between gap-6 pt-3">
@@ -192,8 +186,15 @@ export default function LoginPage() {
 						</Form>
 						<div className="flex items-center justify-center gap-2 pt-6">
 							<span className="text-muted-foreground">New here?</span>
-							{/* 🐨 update this to attribute to include the redirectTo if it exists */}
-							<Link to="/signup">Create an account</Link>
+							<Link
+								to={
+									redirectTo
+										? `/signup?redirectTo=${encodeURIComponent(redirectTo)}`
+										: '/signup'
+								}
+							>
+								Create an account
+							</Link>
 						</div>
 					</div>
 				</div>

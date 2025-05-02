@@ -2,24 +2,20 @@ import { conform, useForm } from '@conform-to/react'
 import { getFieldsetConstraint, parse } from '@conform-to/zod'
 import {
 	json,
-	type LoaderFunctionArgs,
 	redirect,
 	type ActionFunctionArgs,
+	type LoaderFunctionArgs,
 	type MetaFunction,
 } from '@remix-run/node'
-import { Form, useActionData } from '@remix-run/react'
+import { Form, useActionData, useSearchParams } from '@remix-run/react'
 import { AuthenticityTokenInput } from 'remix-utils/csrf/react'
 import { HoneypotInputs } from 'remix-utils/honeypot/react'
+import { safeRedirect } from 'remix-utils/safe-redirect'
 import { z } from 'zod'
 import { CheckboxField, ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
-import {
-	getSessionExpirationDate,
-	requireAnonymous,
-	signup,
-	userIdKey,
-} from '#app/utils/auth.server.ts'
+import { requireAnonymous, signup, sessionKey } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
@@ -44,6 +40,7 @@ const SignupFormSchema = z
 				'You must agree to the terms of service and privacy policy',
 		}),
 		remember: z.boolean().optional(),
+		redirectTo: z.string().optional(),
 	})
 	.superRefine(({ confirmPassword, password }, ctx) => {
 		if (confirmPassword !== password) {
@@ -55,15 +52,12 @@ const SignupFormSchema = z
 		}
 	})
 
-// 🐨 create a loader here that uses the requireAnonymous utility and returns
-// an empty object of json.
 export async function loader({ request }: LoaderFunctionArgs) {
 	await requireAnonymous(request)
 	return json({})
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	// 🐨 add the requireAnonymous utility here
 	await requireAnonymous(request)
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
@@ -83,8 +77,10 @@ export async function action({ request }: ActionFunctionArgs) {
 				return
 			}
 		}).transform(async data => {
-			const user = await signup(data)
-			return { ...data, user }
+			// 🐨 this is a session now
+			const session = await signup(data)
+			// 🐨 this should be a session not a user
+			return { ...data, session }
 		}),
 		async: true,
 	})
@@ -92,21 +88,26 @@ export async function action({ request }: ActionFunctionArgs) {
 	if (submission.intent !== 'submit') {
 		return json({ status: 'idle', submission } as const)
 	}
-	if (!submission.value?.user) {
+	// 🐨 this is a session now, not a user
+	if (!submission.value?.session) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
-	const { user, remember } = submission.value
+	// 🐨 this is a session, not a user
+	const { session, remember, redirectTo } = submission.value
 
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
-	cookieSession.set(userIdKey, user.id)
+	// 🐨 this is a sessionKey and session, not a userIdKey and user
+	cookieSession.set(sessionKey, session.id)
 
-	return redirect('/', {
+	return redirect(safeRedirect(redirectTo), {
 		headers: {
 			'set-cookie': await sessionStorage.commitSession(cookieSession, {
-				expires: remember ? getSessionExpirationDate() : undefined,
+				// 🐨 the expiration date is now available on the session and doesn't
+				// need to be computed here.
+				expires: remember ? session.expirationDate : undefined,
 			}),
 		},
 	})
@@ -120,9 +121,13 @@ export default function SignupRoute() {
 	const actionData = useActionData<typeof action>()
 	const isPending = useIsPending()
 
+	const [searchParams] = useSearchParams()
+	const redirectTo = searchParams.get('redirectTo')
+
 	const [form, fields] = useForm({
 		id: 'signup-form',
 		constraint: getFieldsetConstraint(SignupFormSchema),
+		defaultValue: { redirectTo },
 		lastSubmission: actionData?.submission,
 		onValidate({ formData }) {
 			return parse(formData, { schema: SignupFormSchema })
@@ -216,6 +221,7 @@ export default function SignupRoute() {
 						errors={fields.remember.errors}
 					/>
 
+					<input {...conform.input(fields.redirectTo, { type: 'hidden' })} />
 					<ErrorList errors={form.errors} id={form.errorId} />
 
 					<div className="flex items-center justify-between gap-6">
