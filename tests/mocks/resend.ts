@@ -20,7 +20,7 @@ export const handlers: Array<HttpHandler> = [
 	// 🐨 handle http.post requests to `https://api.resend.com/emails`
 	http.post(`https://api.resend.com/emails`, async ({ request }) => {
 		// 🐨 get the body from await request.json()
-		const body = EmailSchema.parse(request.json())
+		const body = EmailSchema.parse(await request.json())
 		// 🐨 log out the email body
 		console.info('🔶 mocked email contents:', body)
 
