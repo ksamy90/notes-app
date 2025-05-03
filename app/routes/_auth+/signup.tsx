@@ -15,9 +15,10 @@ import { z } from 'zod'
 import { CheckboxField, ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
-import { requireAnonymous, signup, sessionKey } from '#app/utils/auth.server.ts'
+import { requireAnonymous, sessionKey, signup } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
+import { sendEmail } from '#app/utils/email.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
 import { useIsPending } from '#app/utils/misc.tsx'
 import { sessionStorage } from '#app/utils/session.server.ts'
@@ -54,6 +55,15 @@ const SignupFormSchema = z
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	await requireAnonymous(request)
+	// 🐨 uncomment this to test it out:
+	const response = await sendEmail({
+		to: 'ksamy90@aol.com',
+		subject: 'Hello World',
+		text: 'This is the plain text version',
+		html: '<p>This is the HTML version</p>',
+	})
+	console.log(response)
+	// you should get a log with an error
 	return json({})
 }
 
@@ -77,9 +87,7 @@ export async function action({ request }: ActionFunctionArgs) {
 				return
 			}
 		}).transform(async data => {
-			// 🐨 this is a session now
 			const session = await signup(data)
-			// 🐨 this should be a session not a user
 			return { ...data, session }
 		}),
 		async: true,
@@ -88,25 +96,20 @@ export async function action({ request }: ActionFunctionArgs) {
 	if (submission.intent !== 'submit') {
 		return json({ status: 'idle', submission } as const)
 	}
-	// 🐨 this is a session now, not a user
 	if (!submission.value?.session) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
-	// 🐨 this is a session, not a user
 	const { session, remember, redirectTo } = submission.value
 
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
-	// 🐨 this is a sessionKey and session, not a userIdKey and user
 	cookieSession.set(sessionKey, session.id)
 
 	return redirect(safeRedirect(redirectTo), {
 		headers: {
 			'set-cookie': await sessionStorage.commitSession(cookieSession, {
-				// 🐨 the expiration date is now available on the session and doesn't
-				// need to be computed here.
 				expires: remember ? session.expirationDate : undefined,
 			}),
 		},
