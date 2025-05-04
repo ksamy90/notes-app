@@ -26,51 +26,11 @@ async function seed() {
 
 	console.time('🧹 Cleaned up the database...')
 	await prisma.user.deleteMany()
-	await prisma.role.deleteMany()
-	await prisma.permission.deleteMany()
+	// 🐨 delete all the verifications
+	await prisma.user.deleteMany()
 	console.timeEnd('🧹 Cleaned up the database...')
 
-	// SETUP PERMISSIONS CONSTRAINTS
-	const entities = ['user', 'note'] as const
-	const actions = ['create', 'read', 'update', 'delete'] as const
-	const accesses = ['own', 'any'] as const
-
-	for (const entity of entities) {
-		for (const action of actions) {
-			for (const access of accesses) {
-				await prisma.permission.create({ data: { entity, action, access } })
-			}
-		}
-	}
-
-	console.time('👑 Created roles...')
-	await prisma.role.create({
-		data: {
-			name: 'admin',
-			permissions: {
-				connect: await prisma.permission.findMany({
-					select: { id: true },
-					where: { access: 'any' },
-				}),
-			},
-		},
-	})
-	await prisma.role.create({
-		data: {
-			name: 'user',
-			permissions: {
-				connect: await prisma.permission.findMany({
-					select: { id: true },
-					where: { access: 'own' },
-				}),
-			},
-		},
-	})
-	console.timeEnd('👑 Created roles...')
-
-	console.log('✅ all done')
-
-	const totalUsers = 4
+	const totalUsers = 3
 	console.time(`👤 Created ${totalUsers} users...`)
 	const noteImages = await Promise.all([
 		img({
@@ -131,7 +91,6 @@ async function seed() {
 					...userData,
 					password: { create: createPassword(userData.username) },
 					image: { create: userImages[index % 10] },
-					// 🐨 connect the 'user' role to these users
 					roles: { connect: { name: 'user' } },
 					notes: {
 						create: Array.from({

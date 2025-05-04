@@ -1,5 +1,6 @@
 import { conform, useForm } from '@conform-to/react'
 import { getFieldsetConstraint, parse } from '@conform-to/zod'
+import { generateTOTP } from '@epic-web/totp'
 import {
 	json,
 	redirect,
@@ -19,10 +20,10 @@ import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { sendEmail } from '#app/utils/email.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
-import { useIsPending } from '#app/utils/misc.tsx'
+import { getDomainUrl, useIsPending } from '#app/utils/misc.tsx'
 import { EmailSchema } from '#app/utils/user-validation.ts'
-import { verifySessionStorage } from '#app/utils/verification.server.ts'
-import { onboardingEmailSessionKey } from './onboarding.tsx'
+// import { verifySessionStorage } from '#app/utils/verification.server.ts'
+// import { onboardingEmailSessionKey } from './onboarding.tsx'
 
 const SignupSchema = z.object({
 	email: EmailSchema,
@@ -64,30 +65,66 @@ export async function action({ request }: ActionFunctionArgs) {
 	}
 	const { email } = submission.value
 
+	// 🐨 generate the one-time password which we'll email to the user using generateTOTP from '@epic-web/totp'
+	// 💰 use the "SHA256" algorithm and a period of 10 minutes (10 * 60)
+	// 💰 this will give you an object that has all the verification config which you'll save in the db and
+	// the otp you can email to the user.
+	const { otp, ...verificationConfig } = generateTOTP({
+		algorithm: 'SHA256',
+		period: 10 * 60,
+	})
+
+	// 🐨 create a "redirectToUrl" to send the user to, it should go to the "/verify" route
+	// 💰 We need to send the full URL, so you can use getDomainUrl(request) to get the domain
+	//   new URL(`${getDomainUrl(request)}/verify`)
+	// 🐨 set the searchParam "type" to "onboarding"
+	// 🐨 set the searchParam "target" to the email address the user provided
+	// 🐨 make a copy of the redirectToUrl and call it the "verifyUrl" (💰 new URL(redirectToUrl))
+	// 🐨 set the searchParam "code" to the otp you got from generateTOTP
+	const type = 'onboarding'
+	const redirectToUrl = new URL(`${getDomainUrl(request)}/verify`)
+	redirectToUrl.searchParams.set('type', type)
+	redirectToUrl.searchParams.set('target', email)
+	const verifyUrl = new URL(redirectToUrl)
+	verifyUrl.searchParams.set('code', otp)
+
+	// 🐨 use upsert to insert/update a verification with the verification config
+	// 🐨 set the type to "onboarding" and target to the user's email
+	// 🐨 set the expiresAt to a date 10 minutes in the future
+	const verificationData = {
+		type,
+		target: email,
+		...verificationConfig,
+		expiresAt: new Date(Date.now() + verificationConfig.period * 1000),
+	}
+	await prisma.verification.upsert({
+		where: { target_type: { target: email, type } },
+		create: verificationData,
+		update: verificationData,
+	})
+
 	const response = await sendEmail({
 		to: email,
 		subject: `Welcome to Epic Notes!`,
-		text: `This is a test email`,
+		// 🐨 update this to include the otp and the verifyUrl
+		text: `Here's your code: ${otp}. Or open this: ${verifyUrl.toString()}`,
 	})
 
 	if (response.status === 'success') {
-		// You'll want to actually wait until the user has verified their email
-		// before setting this in the session and sending them to onboarding, but
-		// we'll get to that later.
-
-		// 🐨 get the user's verifySession from your new verifySessionStorage
-		// 🐨 set the onboardingEmailSessionKey in the verifySession to the email
-		// 💰 the onboardingEmailSessionKey comes from './onboarding.tsx'
-		// 🐨 commit the verifySession to the verifySessionStorage
-		const verifySession = await verifySessionStorage.getSession(
-			request.headers.get('cookie'),
-		)
-		verifySession.set(onboardingEmailSessionKey, email)
-		return redirect('/onboarding', {
-			headers: {
-				'set-cookie': await verifySessionStorage.commitSession(verifySession),
-			},
-		})
+		// 🦉 we're going to move all this to the verify route, because we don't want
+		// to set this until *after* the user has verified their email.
+		/* 
+			const verifySession = await verifySessionStorage.getSession(
+				request.headers.get('cookie'),
+			)
+			verifySession.set(onboardingEmailSessionKey, email)
+			return redirect('/onboarding', {
+				headers: {
+					'set-cookie': await verifySessionStorage.commitSession(verifySession),
+				},
+			}) 
+		*/
+		return redirect(redirectToUrl.toString())
 	} else {
 		submission.error[''] = [response.error]
 		return json({ status: 'error', submission } as const, { status: 500 })
