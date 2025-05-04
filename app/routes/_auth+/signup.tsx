@@ -22,6 +22,7 @@ import { sendEmail } from '#app/utils/email.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
 import { getDomainUrl, useIsPending } from '#app/utils/misc.tsx'
 import { EmailSchema } from '#app/utils/user-validation.ts'
+import { codeQueryParam, targetQueryParam, typeQueryParam } from './verify.tsx'
 // import { verifySessionStorage } from '#app/utils/verification.server.ts'
 // import { onboardingEmailSessionKey } from './onboarding.tsx'
 
@@ -83,10 +84,10 @@ export async function action({ request }: ActionFunctionArgs) {
 	// 🐨 set the searchParam "code" to the otp you got from generateTOTP
 	const type = 'onboarding'
 	const redirectToUrl = new URL(`${getDomainUrl(request)}/verify`)
-	redirectToUrl.searchParams.set('type', type)
-	redirectToUrl.searchParams.set('target', email)
+	redirectToUrl.searchParams.set(typeQueryParam, type)
+	redirectToUrl.searchParams.set(targetQueryParam, email)
 	const verifyUrl = new URL(redirectToUrl)
-	verifyUrl.searchParams.set('code', otp)
+	verifyUrl.searchParams.set(codeQueryParam, otp)
 
 	// 🐨 use upsert to insert/update a verification with the verification config
 	// 🐨 set the type to "onboarding" and target to the user's email

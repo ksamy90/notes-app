@@ -134,8 +134,16 @@ async function validateRequest(
 	// throw new Error('This is not yet implemented')
 
 	// 🐨 grab the value from the submission
-
+	const { value: submissionValue } = submission
 	// 🐨 delete the verification from the database
+	await prisma.verification.delete({
+		where: {
+			target_type: {
+				target: submissionValue[targetQueryParam],
+				type: submissionValue[typeQueryParam],
+			},
+		},
+	})
 
 	// 🐨 uncomment all this stuff (this is the same stuff we just deleted from
 	// the signup route in the last exercise):
