@@ -1,7 +1,9 @@
 import { conform, useForm } from '@conform-to/react'
 import { getFieldsetConstraint, parse } from '@conform-to/zod'
+import { verifyTOTP } from '@epic-web/totp'
 import {
 	json,
+	redirect,
 	type ActionFunctionArgs,
 	type LoaderFunctionArgs,
 } from '@remix-run/node'
@@ -17,14 +19,27 @@ import { ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
+import { prisma } from '#app/utils/db.server.ts'
 import { useIsPending } from '#app/utils/misc.tsx'
+import { verifySessionStorage } from '#app/utils/verification.server.ts'
+import { onboardingEmailSessionKey } from './onboarding.tsx'
 
 export const codeQueryParam = 'code'
 export const targetQueryParam = 'target'
+// 🐨 add a typeQueryParam here
+export const typeQueryParam = 'type'
 export const redirectToQueryParam = 'redirectTo'
+
+// 🐨 create a schema for the typeQueryParam
+// 💰 for right now, it should really just be a z.enum(['onboarding'])
+const types = ['onboarding'] as const
+const VerificationTypeSchema = z.enum(types)
+export type VerificationTypes = z.infer<typeof VerificationTypeSchema>
 
 const VerifySchema = z.object({
 	[codeQueryParam]: z.string().min(6).max(6),
+	// 🐨 add the typeQueryParam to the schema here
+	[typeQueryParam]: VerificationTypeSchema,
 	[targetQueryParam]: z.string(),
 	[redirectToQueryParam]: z.string().optional(),
 })
@@ -60,8 +75,40 @@ async function validateRequest(
 		schema: () =>
 			VerifySchema.superRefine(async (data, ctx) => {
 				console.log('verify this', data)
-				// we'll validate the code here later
-				const codeIsValid = true
+				// 🐨 retrieve the verification secret, period, digits, charSet, and algorithm
+				// by the target and type and ensure it's not expired
+				// 🐨 if there's no verification, then add an issue to the code field
+				// that it's invalid (similar to the one below)
+				// 🐨 set codeIsValid to the result of calling verifyTOTP (from '@epic-web/totp')
+				// with the verification config and the otp from the submitted data
+				const verification = await prisma.verification.findUnique({
+					select: {
+						secret: true,
+						period: true,
+						digits: true,
+						algorithm: true,
+						charSet: true,
+					},
+					where: {
+						target_type: {
+							target: data[targetQueryParam],
+							type: data[typeQueryParam],
+						},
+						OR: [{ expiresAt: { gt: new Date() } }, { expiresAt: null }],
+					},
+				})
+				if (!verification) {
+					ctx.addIssue({
+						path: [codeQueryParam],
+						code: z.ZodIssueCode.custom,
+						message: `Invalid code`,
+					})
+					return z.NEVER
+				}
+				const codeIsValid = verifyTOTP({
+					otp: data[codeQueryParam],
+					...verification,
+				})
 				if (!codeIsValid) {
 					ctx.addIssue({
 						path: [codeQueryParam],
@@ -82,8 +129,28 @@ async function validateRequest(
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
+	// 💣 delete this. We're implementing it now!
 	// we'll implement this later
-	throw new Error('This is not yet implemented')
+	// throw new Error('This is not yet implemented')
+
+	// 🐨 grab the value from the submission
+
+	// 🐨 delete the verification from the database
+
+	// 🐨 uncomment all this stuff (this is the same stuff we just deleted from
+	// the signup route in the last exercise):
+	const verifySession = await verifySessionStorage.getSession(
+		request.headers.get('cookie'),
+	)
+	verifySession.set(
+		onboardingEmailSessionKey,
+		submission.value[targetQueryParam],
+	)
+	return redirect('/onboarding', {
+		headers: {
+			'set-cookie': await verifySessionStorage.commitSession(verifySession),
+		},
+	})
 }
 
 export default function VerifyRoute() {
@@ -101,6 +168,8 @@ export default function VerifyRoute() {
 		},
 		defaultValue: {
 			code: searchParams.get(codeQueryParam) ?? '',
+			// 🐨 add the typeQueryParam here
+			type: searchParams.get(typeQueryParam) ?? '',
 			target: searchParams.get(targetQueryParam) ?? '',
 			redirectTo: searchParams.get(redirectToQueryParam) ?? '',
 		},
@@ -131,6 +200,10 @@ export default function VerifyRoute() {
 							}}
 							inputProps={conform.input(fields[codeQueryParam])}
 							errors={fields[codeQueryParam].errors}
+						/>
+						{/* 🐨 add a hidden field for the type here */}
+						<input
+							{...conform.input(fields[typeQueryParam], { type: 'hidden' })}
 						/>
 						<input
 							{...conform.input(fields[targetQueryParam], { type: 'hidden' })}
