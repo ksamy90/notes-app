@@ -4,6 +4,7 @@ import {
 	json,
 	redirect,
 	type ActionFunctionArgs,
+	type LoaderFunctionArgs,
 	type MetaFunction,
 } from '@remix-run/node'
 import { Form, useActionData, useLoaderData } from '@remix-run/react'
@@ -11,6 +12,7 @@ import { z } from 'zod'
 import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 import { ErrorList, Field } from '#app/components/forms.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
+import { requireAnonymous, resetUserPassword } from '#app/utils/auth.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { invariant, useIsPending } from '#app/utils/misc.tsx'
 import { PasswordSchema } from '#app/utils/user-validation.ts'
@@ -23,16 +25,6 @@ export async function handleVerification({
 	request,
 	submission,
 }: VerifyFunctionArgs) {
-	// 🐨 the submission.value.target is the user's email or username. Use that to
-	// find the user in the database.
-	// 💰 You'll probably want to use OR to match either the email or username
-	// 📜 https://www.prisma.io/docs/reference/api-reference/prisma-client-reference#or
-	// 🐨 if the user doesn't exist, then set submission.error.code = ['Invalid code']
-	// and return a json response with a 400 status code
-	// 🐨 otherwise, get the verifySession from the request and set the
-	// user's username in the session
-	// 🐨 then redirect to the reset password page
-	// 💰 don't forget to commit the session.
 	invariant(submission.value, 'submission.value should be defined by now')
 	const target = submission.value.target
 	const user = await prisma.user.findFirst({
@@ -43,8 +35,9 @@ export async function handleVerification({
 	// because that would allow an attacker to check if an email is registered
 	if (!user) {
 		submission.error.code = ['Invalid code']
-		return json({ statuss: 'error', submission } as const, { status: 400 })
+		return json({ status: 'error', submission } as const, { status: 400 })
 	}
+
 	const verifySession = await verifySessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
@@ -66,12 +59,31 @@ const ResetPasswordSchema = z
 		path: ['confirmPassword'],
 	})
 
-export async function loader() {
-	const resetPasswordUsername = 'get this from the session'
+async function requireResetPasswordUsername(request: Request) {
+	await requireAnonymous(request)
+	const verifySession = await verifySessionStorage.getSession(
+		request.headers.get('cookie'),
+	)
+	const resetPasswordUsername = verifySession.get(
+		resetPasswordUsernameSessionKey,
+	)
+	if (typeof resetPasswordUsername !== 'string' || !resetPasswordUsername) {
+		throw redirect('/login')
+	}
+	return resetPasswordUsername
+}
+
+export async function loader({ request }: LoaderFunctionArgs) {
+	// 🐨 you could make a utility to get the resetPasswordUsername from the session
+	// because you need to do it in the action too.
+	const resetPasswordUsername = await requireResetPasswordUsername(request)
 	return json({ resetPasswordUsername })
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+	// 🐨 you could make a utility to get the resetPasswordUsername from the session
+	// because you need to do it in the loader too.
+	const resetPasswordUsername = await requireResetPasswordUsername(request)
 	const formData = await request.formData()
 	const submission = parse(formData, {
 		schema: ResetPasswordSchema,
@@ -82,8 +94,21 @@ export async function action({ request }: ActionFunctionArgs) {
 	if (!submission.value?.password) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
+	const { password } = submission.value
 
-	throw new Error('This has not yet been implemented')
+	// 🐨 call the resetUserPassword utility here
+	await resetUserPassword({ username: resetPasswordUsername, password })
+	const verifySession = await verifySessionStorage.getSession(
+		request.headers.get('cookie'),
+	)
+	// 🐨 remove the resetPasswordUsernameSessionKey from the session
+	// and redirect the user to login
+	// 💰 don't forget to destroy the session
+	return redirect('/login', {
+		headers: {
+			'set-cookie': await verifySessionStorage.destroySession(verifySession),
+		},
+	})
 }
 
 export const meta: MetaFunction = () => {
