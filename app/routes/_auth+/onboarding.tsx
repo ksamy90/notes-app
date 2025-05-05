@@ -24,7 +24,7 @@ import { requireAnonymous, sessionKey, signup } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
-import { useIsPending } from '#app/utils/misc.tsx'
+import { invariant, useIsPending } from '#app/utils/misc.tsx'
 import { sessionStorage } from '#app/utils/session.server.ts'
 import {
 	NameSchema,
@@ -32,8 +32,9 @@ import {
 	UsernameSchema,
 } from '#app/utils/user-validation.ts'
 import { verifySessionStorage } from '#app/utils/verification.server.ts'
+import { type VerifyFunctionArgs } from './verify.tsx'
 
-export const onboardingEmailSessionKey = 'onboardingEmail'
+const onboardingEmailSessionKey = 'onboardingEmail'
 
 const SignupFormSchema = z
 	.object({
@@ -69,25 +70,13 @@ async function requireOnboardingEmail(request: Request) {
 	}
 	return email
 }
-
 export async function loader({ request }: LoaderFunctionArgs) {
-	await requireAnonymous(request)
-	// 🐨 verify the user has an onboarding email in their verifySession
-	// if they don't redirect them to /signup
-	// 💰 you may consider making a function for this since you need to do this in
-	// the loader and the action.
 	const email = await requireOnboardingEmail(request)
 	return json({ email })
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	await requireAnonymous(request)
-	// 🐨 get the email out of the verifySession. If it's not a string or not there
-	// then redirect the user to /signup
-	// 💰 you may consider making a function for this since you need to do this in
-	// the loader and the action.
 	const email = await requireOnboardingEmail(request)
-
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
 	checkHoneypot(formData)
@@ -125,14 +114,6 @@ export async function action({ request }: ActionFunctionArgs) {
 		request.headers.get('cookie'),
 	)
 	cookieSession.set(sessionKey, session.id)
-	// 🦉 you're going to need to set two cookies, one to get the user logged in
-	// and the other to destroy the verifySession. You can do this using the
-	// headers object
-	// 🐨 get the user's verifySession
-	// 🐨 create a new headers object: (💰 new Headers())
-	// 🐨 use headers.append to add the first 'set-cookie' header
-	// 🐨 use headers.append to add the second 'set-cookie' header
-	// 💰 the order doesn't matter
 	const verifySession = await verifySessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
@@ -149,6 +130,22 @@ export async function action({ request }: ActionFunctionArgs) {
 	)
 
 	return redirect(safeRedirect(redirectTo), { headers })
+}
+
+export async function handleVerification({
+	request,
+	submission,
+}: VerifyFunctionArgs) {
+	invariant(submission.value, 'submission.value should be defined by now')
+	const verifySession = await verifySessionStorage.getSession(
+		request.headers.get('cookie'),
+	)
+	verifySession.set(onboardingEmailSessionKey, submission.value.target)
+	return redirect('/onboarding', {
+		headers: {
+			'set-cookie': await verifySessionStorage.commitSession(verifySession),
+		},
+	})
 }
 
 export const meta: MetaFunction = () => {
