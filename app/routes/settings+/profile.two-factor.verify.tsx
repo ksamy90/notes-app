@@ -1,5 +1,6 @@
 import { conform, useForm } from '@conform-to/react'
 import { getFieldsetConstraint, parse } from '@conform-to/zod'
+import { getTOTPAuthUri } from '@epic-web/totp'
 import {
 	json,
 	redirect,
@@ -12,6 +13,7 @@ import {
 	useLoaderData,
 	useNavigation,
 } from '@remix-run/react'
+import * as QRCode from 'qrcode'
 import { AuthenticityTokenInput } from 'remix-utils/csrf/react'
 import { z } from 'zod'
 import { Field } from '#app/components/forms.tsx'
@@ -20,7 +22,7 @@ import { StatusButton } from '#app/components/ui/status-button.tsx'
 import { requireUserId } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
-import { useIsPending } from '#app/utils/misc.tsx'
+import { getDomainUrl, useIsPending } from '#app/utils/misc.tsx'
 import { redirectWithToast } from '#app/utils/toast.server.ts'
 
 export const handle = {
@@ -35,7 +37,7 @@ export const twoFAVerifyVerificationType = '2fa-verify'
 
 export async function loader({ request }: LoaderFunctionArgs) {
 	// 🐨 get the userId from here
-	await requireUserId(request)
+	const userId = await requireUserId(request)
 	// 🐨 find the user's verification based on the twoFAVerifyVerificationType and the target being the userId
 	// 🐨 select the id, algorithm, secret, period, and digits
 
@@ -46,7 +48,37 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	// 🐨 you can use the user's email for the account name (you'll need to get that from the db)
 	// 🐨 create a qrCode of the otpUri (💰 await QRCode.toDataURL(otpUri))
 	// 🐨 send the qrCode and otpUri
-	return json({ qrCode: `Not yet implemented`, otpUri: `Not yet implemented` })
+	const verification = await prisma.verification.findUnique({
+		where: {
+			target_type: {
+				type: twoFAVerifyVerificationType,
+				target: userId,
+			},
+			expiresAt: { gt: new Date() },
+		},
+		select: {
+			id: true,
+			algorithm: true,
+			secret: true,
+			period: true,
+			digits: true,
+		},
+	})
+	if (!verification) {
+		return redirect('/settings/profile/two-factor')
+	}
+	const user = await prisma.user.findUniqueOrThrow({
+		where: { id: userId },
+		select: { email: true },
+	})
+	const issuer = new URL(getDomainUrl(request)).host
+	const otpUri = getTOTPAuthUri({
+		...verification,
+		accountName: user.email,
+		issuer,
+	})
+	const qrCode = await QRCode.toDataURL(otpUri)
+	return json({ qrCode, otpUri })
 }
 
 export async function action({ request }: ActionFunctionArgs) {
