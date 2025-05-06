@@ -34,7 +34,18 @@ const VerifySchema = z.object({
 export const twoFAVerifyVerificationType = '2fa-verify'
 
 export async function loader({ request }: LoaderFunctionArgs) {
+	// 🐨 get the userId from here
 	await requireUserId(request)
+	// 🐨 find the user's verification based on the twoFAVerifyVerificationType and the target being the userId
+	// 🐨 select the id, algorithm, secret, period, and digits
+
+	// 🐨 if there's no verification, redirect to '/settings/profile/two-factor'
+
+	// 🐨 create the otpUri from getTOTPAuthUri from '@epic-web/totp'
+	// 🐨 you can use `new URL(getDomainUrl(request)).host` for the issuer
+	// 🐨 you can use the user's email for the account name (you'll need to get that from the db)
+	// 🐨 create a qrCode of the otpUri (💰 await QRCode.toDataURL(otpUri))
+	// 🐨 send the qrCode and otpUri
 	return json({ qrCode: `Not yet implemented`, otpUri: `Not yet implemented` })
 }
 
@@ -140,7 +151,7 @@ export default function TwoFactorRoute() {
 								status={
 									pendingIntent === 'verify'
 										? 'pending'
-										: actionData?.status ?? 'idle'
+										: (actionData?.status ?? 'idle')
 								}
 								type="submit"
 								name="intent"
