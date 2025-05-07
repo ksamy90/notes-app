@@ -144,8 +144,8 @@ export async function action({ request }: ActionFunctionArgs) {
 		const verifySession = await verifySessionStorage.getSession()
 		// 🐨 I'm not a fan of these "magic strings"... Turn them into variables instead.
 		// that way you can use them in the handleVerification function as well.
-		verifySession.set('unverified-session-id', session.id)
-		verifySession.set('remember-me', remember)
+		verifySession.set(unverifiedSessionIdKey, session.id)
+		verifySession.set(rememberKey, remember)
 		const redirectUrl = getRedirectToUrl({
 			request,
 			type: twoFAVerificationType,
