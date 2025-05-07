@@ -18,10 +18,14 @@ import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
 import { login, requireAnonymous, sessionKey } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
+import { prisma } from '#app/utils/db.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
 import { useIsPending } from '#app/utils/misc.tsx'
 import { sessionStorage } from '#app/utils/session.server.ts'
 import { PasswordSchema, UsernameSchema } from '#app/utils/user-validation.ts'
+import { verifySessionStorage } from '#app/utils/verification.server.ts'
+import { twoFAVerificationType } from '../settings+/profile.two-factor.tsx'
+import { getRedirectToUrl } from './verify.tsx'
 
 const LoginFormSchema = z.object({
 	username: UsernameSchema,
@@ -43,10 +47,8 @@ export async function action({ request }: ActionFunctionArgs) {
 	const submission = await parse(formData, {
 		schema: intent =>
 			LoginFormSchema.transform(async (data, ctx) => {
-				// 🐨 this should be a session, not a user
 				if (intent !== 'submit') return { ...data, session: null }
 
-				// 🐨 this returns a session, not a user
 				const session = await login(data)
 				if (!session) {
 					ctx.addIssue({
@@ -56,7 +58,6 @@ export async function action({ request }: ActionFunctionArgs) {
 					return z.NEVER
 				}
 
-				// 🐨 this returns a session, not a user
 				return { ...data, session }
 			}),
 		async: true,
@@ -69,29 +70,60 @@ export async function action({ request }: ActionFunctionArgs) {
 		delete submission.value?.password
 		return json({ status: 'idle', submission } as const)
 	}
-	// 🐨 this is a session, not a user
 	if (!submission.value?.session) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
-	// 🐨 this is a session, not a user
 	const { session, remember, redirectTo } = submission.value
 
-	const cookieSession = await sessionStorage.getSession(
-		request.headers.get('cookie'),
-	)
-	// 🐨 this is the sessionKey and a session, not userIdKey and user
-	cookieSession.set(sessionKey, session.id)
+	// 🐨 determine whether the user has 2fa enabled by looking for a verification
+	// in the database with the user's id and the twoFAVerificationType
+	// 💰 you're going to need to update the login utility to retrieve the user's id.
 
-	return redirect(safeRedirect(redirectTo), {
-		headers: {
-			'set-cookie': await sessionStorage.commitSession(cookieSession, {
-				// 🐨 the expiration date is now available on the session and doesn't
-				// need to be computed here.
-				expires: remember ? session.expirationDate : undefined,
-			}),
+	// 🐨 if the user has 2fa enabled, set the session.id in a verifySession cookie
+	// under something like "unverified-session-id"
+	// 🐨 also set the user's "remember me" preference in the verifySession cookie
+	// 🐨 use the getRedirectToUrl utility from the verify route.
+	// 🐨 redirect the user to the verify route
+
+	// 🐨 if the user does not have 2fa enabled, then we can follow the old logic:
+
+	const verification = await prisma.verification.findUnique({
+		select: { id: true },
+		where: {
+			target_type: { target: session.userId, type: twoFAVerificationType },
 		},
 	})
+	const userHasTwoFactor = Boolean(verification)
+	if (userHasTwoFactor) {
+		const verifySession = await verifySessionStorage.getSession()
+		verifySession.set('unverified-session-id', session.id)
+		verifySession.set('remember-me', remember)
+		const redirectUrl = getRedirectToUrl({
+			request,
+			type: twoFAVerificationType,
+			target: session.userId,
+			redirectTo,
+		})
+		return redirect(redirectUrl.toString(), {
+			headers: {
+				'set-cookie': await verifySessionStorage.commitSession(verifySession),
+			},
+		})
+	} else {
+		const cookieSession = await sessionStorage.getSession(
+			request.headers.get('cookie'),
+		)
+		cookieSession.set(sessionKey, session.id)
+
+		return redirect(safeRedirect(redirectTo), {
+			headers: {
+				'set-cookie': await sessionStorage.commitSession(cookieSession, {
+					expires: remember ? session.expirationDate : undefined,
+				}),
+			},
+		})
+	}
 }
 
 export default function LoginPage() {

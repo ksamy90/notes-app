@@ -23,6 +23,7 @@ import {
 } from '#app/utils/misc.tsx'
 import { sessionStorage } from '#app/utils/session.server.ts'
 import { NameSchema, UsernameSchema } from '#app/utils/user-validation.ts'
+import { twoFAVerificationType } from './profile.two-factor.tsx'
 
 const ProfileFormSchema = z.object({
 	name: NameSchema.optional(),
@@ -53,7 +54,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		},
 	})
 
-	return json({ user, isTwoFAEnabled: false })
+	// 🐨 determine whether the user has 2fa by checking for a verification and
+	// by the type twoFAVerificationType and the target being the userId.
+	// 🐨 Set isTwoFAEnabled to true if it exists.
+	const twoFactorVerification = await prisma.verification.findUnique({
+		select: { id: true },
+		where: { target_type: { type: twoFAVerificationType, target: userId } },
+	})
+	return json({ user, isTwoFAEnabled: Boolean(twoFactorVerification) })
 }
 
 type ProfileActionArgs = {

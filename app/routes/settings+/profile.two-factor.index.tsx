@@ -13,23 +13,26 @@ import { requireUserId } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { useIsPending } from '#app/utils/misc.tsx'
+import { twoFAVerificationType } from './profile.two-factor.tsx'
 import { twoFAVerifyVerificationType } from './profile.two-factor.verify.tsx'
 
 export async function loader({ request }: LoaderFunctionArgs) {
-	await requireUserId(request)
-	return json({ isTwoFAEnabled: false })
+	// 🐨 get the user's id from here:
+	const userId = await requireUserId(request)
+	// 🐨 determine whether the user has 2fa by checking for a verification and
+	// by the type twoFAVerificationType and the target being the userId.
+	// 🐨 Set isTwoFAEnabled to true if it exists.
+	const verification = await prisma.verification.findUnique({
+		where: { target_type: { type: twoFAVerificationType, target: userId } },
+		select: { id: true },
+	})
+	return json({ isTwoFAEnabled: Boolean(verification) })
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-	// 🐨 get the userId from here:
 	const userId = await requireUserId(request)
 	const formData = await request.formData()
 	await validateCSRF(formData, request.headers)
-	// 🐨 generate the otp config with generateTOTP (you don't need the otp that's returned, just the config)
-	// 🐨 upsert the verification with the config.
-	// 🐨 the type should be twoFAVerifyVerificationType which you can get from './profile.two-factor.verify.tsx'
-	// 🐨 the target should be the userId
-	// 🐨 Set the expiresAt to 10 minutes from now
 	const { otp: _otp, ...config } = generateTOTP()
 	const verificationData = {
 		...config,

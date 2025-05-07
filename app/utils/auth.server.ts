@@ -77,7 +77,8 @@ export async function login({
 	const user = await verifyUserPassword({ username }, password)
 	if (!user) return null
 	const session = await prisma.session.create({
-		select: { id: true, expirationDate: true },
+		// 🐨 add the userId to the select
+		select: { id: true, expirationDate: true, userId: true },
 		data: {
 			expirationDate: getSessionExpirationDate(),
 			userId: user.id,
@@ -86,9 +87,6 @@ export async function login({
 	return session
 }
 
-// 🐨 add a resetUserPassword function which accepts a username and password
-// 🐨 hash the password using bcrypt
-// 🐨 then update the password by the username
 export async function resetUserPassword({
 	username,
 	password,

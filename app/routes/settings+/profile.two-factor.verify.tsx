@@ -19,11 +19,13 @@ import { z } from 'zod'
 import { Field } from '#app/components/forms.tsx'
 import { Icon } from '#app/components/ui/icon.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
+import { isCodeValid } from '#app/routes/_auth+/verify.tsx'
 import { requireUserId } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { getDomainUrl, useIsPending } from '#app/utils/misc.tsx'
 import { redirectWithToast } from '#app/utils/toast.server.ts'
+import { twoFAVerificationType } from './profile.two-factor.tsx'
 
 export const handle = {
 	breadcrumb: <Icon name="check">Verify</Icon>,
@@ -36,24 +38,10 @@ const VerifySchema = z.object({
 export const twoFAVerifyVerificationType = '2fa-verify'
 
 export async function loader({ request }: LoaderFunctionArgs) {
-	// 🐨 get the userId from here
 	const userId = await requireUserId(request)
-	// 🐨 find the user's verification based on the twoFAVerifyVerificationType and the target being the userId
-	// 🐨 select the id, algorithm, secret, period, and digits
-
-	// 🐨 if there's no verification, redirect to '/settings/profile/two-factor'
-
-	// 🐨 create the otpUri from getTOTPAuthUri from '@epic-web/totp'
-	// 🐨 you can use `new URL(getDomainUrl(request)).host` for the issuer
-	// 🐨 you can use the user's email for the account name (you'll need to get that from the db)
-	// 🐨 create a qrCode of the otpUri (💰 await QRCode.toDataURL(otpUri))
-	// 🐨 send the qrCode and otpUri
 	const verification = await prisma.verification.findUnique({
 		where: {
-			target_type: {
-				type: twoFAVerifyVerificationType,
-				target: userId,
-			},
+			target_type: { type: twoFAVerifyVerificationType, target: userId },
 			expiresAt: { gt: new Date() },
 		},
 		select: {
@@ -78,7 +66,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		issuer,
 	})
 	const qrCode = await QRCode.toDataURL(otpUri)
-	return json({ qrCode, otpUri })
+	return json({ otpUri, qrCode })
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -95,7 +83,13 @@ export async function action({ request }: ActionFunctionArgs) {
 	const submission = await parse(formData, {
 		schema: () =>
 			VerifySchema.superRefine(async (data, ctx) => {
-				const codeIsValid = false
+				// 🐨 determine whether the code is valid using the isCodeValid util from
+				// '#app/routes/_auth+/verify.tsx'
+				const codeIsValid = await isCodeValid({
+					code: data.code,
+					type: twoFAVerifyVerificationType,
+					target: userId,
+				})
 				if (!codeIsValid) {
 					ctx.addIssue({
 						path: ['code'],
@@ -116,8 +110,14 @@ export async function action({ request }: ActionFunctionArgs) {
 		return json({ status: 'error', submission } as const, { status: 400 })
 	}
 
-	// we'll need to update the verification type here...
-
+	// 🐨 update the verification from the twoFAVerifyVerifycationType to the twoFAVerificationType
+	// 🐨 set the expiresAt to null! This should never expire.
+	await prisma.verification.update({
+		where: {
+			target_type: { type: twoFAVerifyVerificationType, target: userId },
+		},
+		data: { type: twoFAVerificationType, expiresAt: null },
+	})
 	throw await redirectWithToast('/settings/profile/two-factor', {
 		type: 'success',
 		title: 'Enabled',

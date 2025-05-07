@@ -21,6 +21,7 @@ import { handleVerification as handleChangeEmailVerification } from '#app/routes
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { getDomainUrl, useIsPending } from '#app/utils/misc.tsx'
+import { type twoFAVerifyVerificationType } from '../settings+/profile.two-factor.verify.tsx'
 import { handleVerification as handleOnboardingVerification } from './onboarding.tsx'
 import { handleVerification as handleResetPasswordVerification } from './reset-password.tsx'
 
@@ -28,7 +29,8 @@ export const codeQueryParam = 'code'
 export const targetQueryParam = 'target'
 export const typeQueryParam = 'type'
 export const redirectToQueryParam = 'redirectTo'
-const types = ['onboarding', 'reset-password', 'change-email'] as const
+// 🐨 add '2fa' as a type
+const types = ['onboarding', 'reset-password', 'change-email', '2fa'] as const
 const VerificationTypeSchema = z.enum(types)
 export type VerificationTypes = z.infer<typeof VerificationTypeSchema>
 
@@ -138,7 +140,9 @@ export async function isCodeValid({
 	target,
 }: {
 	code: string
-	type: VerificationTypes
+	// 🐨 add | typeof twoFAVerifyVerificationType from '../settings+/profile.two-factor.verify.tsx'
+	// 🦉 we're not adding that type to the valid types in general because it's a temporary type
+	type: VerificationTypes | typeof twoFAVerifyVerificationType
 	target: string
 }) {
 	const verification = await prisma.verification.findUnique({
@@ -213,6 +217,11 @@ async function validateRequest(
 		}
 		case 'change-email': {
 			return handleChangeEmailVerification({ request, body, submission })
+		}
+		// 🐨 add a case for '2fa' here
+		// you can just throw an error for now, we'll get to this next...
+		case '2fa': {
+			throw new Error('not yet implemented')
 		}
 	}
 }
