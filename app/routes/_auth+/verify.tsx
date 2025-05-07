@@ -14,6 +14,7 @@ import {
 } from '@remix-run/react'
 import { AuthenticityTokenInput } from 'remix-utils/csrf/react'
 import { z } from 'zod'
+import { GeneralErrorBoundary } from '#app/components/error-boundary.tsx'
 import { ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
@@ -22,6 +23,7 @@ import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { getDomainUrl, useIsPending } from '#app/utils/misc.tsx'
 import { type twoFAVerifyVerificationType } from '../settings+/profile.two-factor.verify.tsx'
+import { handleVerification as handleLoginTwoFactorVerification } from './login.tsx'
 import { handleVerification as handleOnboardingVerification } from './onboarding.tsx'
 import { handleVerification as handleResetPasswordVerification } from './reset-password.tsx'
 
@@ -29,7 +31,6 @@ export const codeQueryParam = 'code'
 export const targetQueryParam = 'target'
 export const typeQueryParam = 'type'
 export const redirectToQueryParam = 'redirectTo'
-// 🐨 add '2fa' as a type
 const types = ['onboarding', 'reset-password', 'change-email', '2fa'] as const
 const VerificationTypeSchema = z.enum(types)
 export type VerificationTypes = z.infer<typeof VerificationTypeSchema>
@@ -140,8 +141,6 @@ export async function isCodeValid({
 	target,
 }: {
 	code: string
-	// 🐨 add | typeof twoFAVerifyVerificationType from '../settings+/profile.two-factor.verify.tsx'
-	// 🦉 we're not adding that type to the valid types in general because it's a temporary type
 	type: VerificationTypes | typeof twoFAVerifyVerificationType
 	target: string
 }) {
@@ -199,29 +198,39 @@ async function validateRequest(
 
 	const { value: submissionValue } = submission
 
-	await prisma.verification.delete({
-		where: {
-			target_type: {
-				target: submissionValue[targetQueryParam],
-				type: submissionValue[typeQueryParam],
+	// 🐨 we don't want to delete the user's 2FA verification, so stick this
+	// delete call in a function called `deleteVerification` and we'll call it
+	// where it's needed.
+	async function deleteVerification() {
+		await prisma.verification.delete({
+			where: {
+				target_type: {
+					type: submissionValue[typeQueryParam],
+					target: submissionValue[targetQueryParam],
+				},
 			},
-		},
-	})
+		})
+	}
 
 	switch (submissionValue[typeQueryParam]) {
 		case 'reset-password': {
+			// 🐨 call deleteVerification()
+			await deleteVerification()
 			return handleResetPasswordVerification({ request, body, submission })
 		}
 		case 'onboarding': {
+			// 🐨 call deleteVerification()
+			await deleteVerification()
 			return handleOnboardingVerification({ request, body, submission })
 		}
 		case 'change-email': {
+			// 🐨 call deleteVerification()
+			await deleteVerification()
 			return handleChangeEmailVerification({ request, body, submission })
 		}
-		// 🐨 add a case for '2fa' here
-		// you can just throw an error for now, we'll get to this next...
 		case '2fa': {
-			throw new Error('not yet implemented')
+			// 🐨 call handleVerification from './login.tsx'
+			return handleLoginTwoFactorVerification({ request, body, submission })
 		}
 	}
 }
@@ -231,6 +240,30 @@ export default function VerifyRoute() {
 	const [searchParams] = useSearchParams()
 	const isPending = useIsPending()
 	const actionData = useActionData<typeof action>()
+	const type = VerificationTypeSchema.parse(searchParams.get(typeQueryParam))
+
+	const checkEmail = (
+		<>
+			<h1 className="text-h1">Check your email</h1>
+			<p className="mt-3 text-body-md text-muted-foreground">
+				We've sent you a code to verify your email address.
+			</p>
+		</>
+	)
+
+	const headings: Record<VerificationTypes, React.ReactNode> = {
+		onboarding: checkEmail,
+		'reset-password': checkEmail,
+		'change-email': checkEmail,
+		'2fa': (
+			<>
+				<h1 className="text-h1">Check your 2FA app</h1>
+				<p className="mt-3 text-body-md text-muted-foreground">
+					Please enter your 2FA code to verify your identity.
+				</p>
+			</>
+		),
+	}
 
 	const [form, fields] = useForm({
 		id: 'verify-form',
@@ -241,7 +274,7 @@ export default function VerifyRoute() {
 		},
 		defaultValue: {
 			code: searchParams.get(codeQueryParam) ?? '',
-			type: searchParams.get(typeQueryParam) ?? '',
+			type,
 			target: searchParams.get(targetQueryParam) ?? '',
 			redirectTo: searchParams.get(redirectToQueryParam) ?? '',
 		},
@@ -249,12 +282,7 @@ export default function VerifyRoute() {
 
 	return (
 		<div className="container flex flex-col justify-center pb-32 pt-20">
-			<div className="text-center">
-				<h1 className="text-h1">Check your email</h1>
-				<p className="mt-3 text-body-md text-muted-foreground">
-					We've sent you a code to verify your email address.
-				</p>
-			</div>
+			<div className="text-center">{headings[type]}</div>
 
 			<Spacer size="xs" />
 
@@ -297,4 +325,8 @@ export default function VerifyRoute() {
 			</div>
 		</div>
 	)
+}
+
+export function ErrorBoundary() {
+	return <GeneralErrorBoundary />
 }

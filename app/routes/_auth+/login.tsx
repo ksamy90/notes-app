@@ -20,12 +20,68 @@ import { login, requireAnonymous, sessionKey } from '#app/utils/auth.server.ts'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
-import { useIsPending } from '#app/utils/misc.tsx'
+import { invariant, useIsPending } from '#app/utils/misc.tsx'
 import { sessionStorage } from '#app/utils/session.server.ts'
+import { redirectWithToast } from '#app/utils/toast.server.ts'
 import { PasswordSchema, UsernameSchema } from '#app/utils/user-validation.ts'
 import { verifySessionStorage } from '#app/utils/verification.server.ts'
 import { twoFAVerificationType } from '../settings+/profile.two-factor.tsx'
-import { getRedirectToUrl } from './verify.tsx'
+import { getRedirectToUrl, type VerifyFunctionArgs } from './verify.tsx'
+
+const unverifiedSessionIdKey = 'unverified-session-id'
+const rememberKey = 'remember-me'
+
+// 🐨 add a handleVerification function here which takes a request and submission
+// 🐨 get use sessionStorage and verifySessionStorage to get those sessions
+// 🐨 check that the session exists in the database, and if it doesn't, send the user
+// to /login (💯 for extra credit, use redirectWithToast to give them a toast message)
+// 🐨 set the sessionKey on the cookieSession to the unverifiedSessionId from the verifySession
+// 🐨 get the remember preference from the verifySession
+// 🐨 create a Headers object that has a 'set-cookie' header for both sessions
+//   (destroy the verify session, commit the cookie session with the session
+//   expiration if remember is set).
+// 🐨 redirect the user to the "redirectTo" value from the submission
+
+export async function handleVerification({
+	request,
+	submission,
+}: VerifyFunctionArgs) {
+	invariant(submission.value, 'submission has value')
+	const cookieSession = await sessionStorage.getSession(
+		request.headers.get('cookie'),
+	)
+	const verifySession = await verifySessionStorage.getSession(
+		request.headers.get('cookie'),
+	)
+	const session = await prisma.session.findUnique({
+		select: { expirationDate: true },
+		where: { id: verifySession.get(unverifiedSessionIdKey) },
+	})
+	if (!session) {
+		throw await redirectWithToast('/login', {
+			type: 'error',
+			title: 'Invalid session',
+			description: 'Could not find session to verify. Please try again.',
+		})
+	}
+	cookieSession.set(sessionKey, verifySession.get(unverifiedSessionIdKey))
+
+	const remember = verifySession.get(rememberKey)
+	const { redirectTo } = submission.value
+
+	const headers = new Headers()
+	headers.append(
+		'set-cookie',
+		await sessionStorage.commitSession(cookieSession, {
+			expires: remember ? session.expirationDate : undefined,
+		}),
+	)
+	headers.append(
+		'set-cookie',
+		await verifySessionStorage.destroySession(verifySession),
+	)
+	return redirect(safeRedirect(redirectTo), { headers })
+}
 
 const LoginFormSchema = z.object({
 	username: UsernameSchema,
@@ -76,18 +132,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
 	const { session, remember, redirectTo } = submission.value
 
-	// 🐨 determine whether the user has 2fa enabled by looking for a verification
-	// in the database with the user's id and the twoFAVerificationType
-	// 💰 you're going to need to update the login utility to retrieve the user's id.
-
-	// 🐨 if the user has 2fa enabled, set the session.id in a verifySession cookie
-	// under something like "unverified-session-id"
-	// 🐨 also set the user's "remember me" preference in the verifySession cookie
-	// 🐨 use the getRedirectToUrl utility from the verify route.
-	// 🐨 redirect the user to the verify route
-
-	// 🐨 if the user does not have 2fa enabled, then we can follow the old logic:
-
 	const verification = await prisma.verification.findUnique({
 		select: { id: true },
 		where: {
@@ -95,15 +139,17 @@ export async function action({ request }: ActionFunctionArgs) {
 		},
 	})
 	const userHasTwoFactor = Boolean(verification)
+
 	if (userHasTwoFactor) {
 		const verifySession = await verifySessionStorage.getSession()
+		// 🐨 I'm not a fan of these "magic strings"... Turn them into variables instead.
+		// that way you can use them in the handleVerification function as well.
 		verifySession.set('unverified-session-id', session.id)
 		verifySession.set('remember-me', remember)
 		const redirectUrl = getRedirectToUrl({
 			request,
 			type: twoFAVerificationType,
 			target: session.userId,
-			redirectTo,
 		})
 		return redirect(redirectUrl.toString(), {
 			headers: {
