@@ -129,7 +129,7 @@ export async function shouldRequestTwoFA({
 		request.headers.get('cookie'),
 	)
 	const verifiedTime = cookieSession.get(verifiedTimeKey) ?? new Date(0)
-	const twoHours = 1000 * 60 * 60 * 2
+	const twoHours = 1000 * 5
 	return Date.now() - verifiedTime > twoHours
 }
 
