@@ -6,6 +6,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 	// 🐨 call authenticator.authenticate with 'github', the request, and
 	// the option throwOnError: true
 	// 🐨 feel free to log the result
+	console.log(request.url)
 	const providerName = 'github'
 	const profile = await authenticator.authenticate(providerName, request, {
 		throwOnError: true,
