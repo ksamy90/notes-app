@@ -17,6 +17,7 @@ import { CheckboxField, ErrorList, Field } from '#app/components/forms.tsx'
 import { Spacer } from '#app/components/spacer.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
 import { login, requireAnonymous, sessionKey } from '#app/utils/auth.server.ts'
+import { ProviderConnectionForm } from '#app/utils/connections.tsx'
 import { validateCSRF } from '#app/utils/csrf.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
@@ -28,7 +29,6 @@ import { verifySessionStorage } from '#app/utils/verification.server.ts'
 import { twoFAVerificationType } from '../settings+/profile.two-factor.tsx'
 import { getRedirectToUrl, type VerifyFunctionArgs } from './verify.tsx'
 
-// 🐨 create a verifiedTimeKey which you'll use in handleVerification and shouldRequestTwoFA
 const verifiedTimeKey = 'verified-time'
 const unverifiedSessionIdKey = 'unverified-session-id'
 const rememberKey = 'remember-me'
@@ -38,7 +38,6 @@ export async function handleVerification({
 	submission,
 }: VerifyFunctionArgs) {
 	invariant(submission.value, 'Submission should have a value by this point')
-
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
@@ -49,21 +48,13 @@ export async function handleVerification({
 	const remember = verifySession.get(rememberKey)
 	const { redirectTo } = submission.value
 	const headers = new Headers()
-
-	// 🦉 you're going to need to move things around a bit now. We need to handle
-	// the case where we're just re-verifying an existing session rather than
-	// handling a new one. So here's what you need to do:
-	// 🐨 add a verified time (Date.now()) to the cookie session
 	cookieSession.set(verifiedTimeKey, Date.now())
 
-	// 🐨 get the unverifiedSessionId from the verifySession
-	// 🐨 put everything starting here and going until the next 🐨 in an if block
-	// if the unverifiedSessionId exists
 	const unverifiedSessionId = verifySession.get(unverifiedSessionIdKey)
 	if (unverifiedSessionId) {
 		const session = await prisma.session.findUnique({
 			select: { expirationDate: true },
-			where: { id: verifySession.get(unverifiedSessionIdKey) },
+			where: { id: unverifiedSessionId },
 		})
 		if (!session) {
 			throw await redirectWithToast('/login', {
@@ -72,8 +63,7 @@ export async function handleVerification({
 				description: 'Could not find session to verify. Please try again.',
 			})
 		}
-
-		cookieSession.set(sessionKey, verifySession.get(unverifiedSessionIdKey))
+		cookieSession.set(sessionKey, unverifiedSessionId)
 
 		headers.append(
 			'set-cookie',
@@ -82,19 +72,17 @@ export async function handleVerification({
 			}),
 		)
 	} else {
-		// 🐨 everything above this line should be in the if block
-		// 🐨 and now in the else case, we just want to commit the cookie session
-		// so we can add the verified time to the cookie.
-		// the rest of this is unchanged.
 		headers.append(
 			'set-cookie',
 			await sessionStorage.commitSession(cookieSession),
 		)
 	}
+
 	headers.append(
 		'set-cookie',
 		await verifySessionStorage.destroySession(verifySession),
 	)
+
 	return redirect(safeRedirect(redirectTo), { headers })
 }
 
@@ -105,31 +93,21 @@ export async function shouldRequestTwoFA({
 	request: Request
 	userId: string
 }) {
-	// 🐨 get the verify session
-	// 🐨 if there's currently an unverifiedSessionId, return true
 	const verifySession = await verifySessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
 	if (verifySession.has(unverifiedSessionIdKey)) return true
-	// 🐨 get the 2fa verification and return false if there is none
-	// 💰 you can get this from the action below
-
-	// 🐨 get the cookieSession from sessionStorage
-	// 🐨 get the verifiedTime from the cookieSession
-	// 🐨 return true if the verifiedTime is over two hours ago
-	// 🐨 move this logic into the new shouldRequestTwoFA function
-	const userHasTwoFactor = await prisma.verification.findUnique({
+	// if it's over two hours since they last verified, we should request 2FA again
+	const userHasTwoFA = await prisma.verification.findUnique({
 		select: { id: true },
-		where: {
-			target_type: { target: userId, type: twoFAVerificationType },
-		},
+		where: { target_type: { target: userId, type: twoFAVerificationType } },
 	})
-	if (!userHasTwoFactor) return false
+	if (!userHasTwoFA) return false
 	const cookieSession = await sessionStorage.getSession(
 		request.headers.get('cookie'),
 	)
 	const verifiedTime = cookieSession.get(verifiedTimeKey) ?? new Date(0)
-	const twoHours = 1000 * 5
+	const twoHours = 1000 * 60 * 60 * 2
 	return Date.now() - verifiedTime > twoHours
 }
 
@@ -302,6 +280,9 @@ export default function LoginPage() {
 								</StatusButton>
 							</div>
 						</Form>
+						<div className="mt-5 flex flex-col gap-5 border-b-2 border-t-2 border-border py-3">
+							<ProviderConnectionForm type="Login" providerName="github" />
+						</div>
 						<div className="flex items-center justify-center gap-2 pt-6">
 							<span className="text-muted-foreground">New here?</span>
 							<Link

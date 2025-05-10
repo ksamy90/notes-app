@@ -23,32 +23,23 @@ type ProviderUser = {
 	name?: string
 	imageUrl?: string
 }
-
-// 🐨 create the authenticator here, pass the connectionSessionStorage
 export const authenticator = new Authenticator<ProviderUser>(
 	connectionSessionStorage,
 )
 
-// 🐨 call authenticator.use with a new GitHubStrategy
-// 🐨 set the clientID, clientSecret, and callbackURL options
-// 🐨 the callback should accept an object with a profile property.
-// 🐨 The profile will have potentially multiple emails, the priority will be the first
-//    so get the priority email and throw a redirect with a toast if no email is found
-// 🐨 otherwise, return an object with the email, id,
-//    username (profile.displayName), name (profile.name.givenName), and imageUrl (profile.photos[0].value)
 authenticator.use(
 	new GitHubStrategy(
 		{
-			clientID: process.env.GITHUB_CLIENT_ID,
+			clientId: process.env.GITHUB_CLIENT_ID,
 			clientSecret: process.env.GITHUB_CLIENT_SECRET,
-			callbackURL: '/auth/github/callback',
+			redirectURI: 'http://localhost:3000/auth/github/callback',
 		},
 		async ({ profile }) => {
 			const email = profile.emails[0].value.trim().toLowerCase()
 			if (!email) {
-				throw redirectWithToast('/login', {
+				throw await redirectWithToast('/login', {
 					title: 'No email found',
-					description: 'Please add a verified email to your Github account.',
+					description: 'Please add a verified email to your GitHub account.',
 				})
 			}
 			const username = profile.displayName
