@@ -1,12 +1,16 @@
-// 💰 you're gonna need this:
-// import { authenticator } from '#app/utils/auth.server.ts'
+import { type LoaderFunctionArgs } from '@remix-run/node'
+import { authenticator } from '#app/utils/auth.server.ts'
 import { redirectWithToast } from '#app/utils/toast.server.ts'
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
 	// 🐨 call authenticator.authenticate with 'github', the request, and
 	// the option throwOnError: true
-
 	// 🐨 feel free to log the result
+	const providerName = 'github'
+	const profile = await authenticator.authenticate(providerName, request, {
+		throwOnError: true,
+	})
+	console.log(profile)
 
 	throw await redirectWithToast('/login', {
 		title: 'Auth Success (jk)',
