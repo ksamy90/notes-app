@@ -9,7 +9,6 @@ export async function loader() {
 
 export async function action({ request, params }: ActionFunctionArgs) {
 	const providerName = ProviderNameSchema.parse(params.provider)
-	console.log(params)
 
 	await handleMockAction(providerName, request)
 
