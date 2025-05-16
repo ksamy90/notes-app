@@ -1,8 +1,7 @@
-import crypto from 'crypto'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import { type RequestHandler, createRequestHandler } from '@remix-run/express'
-import { type ServerBuild, broadcastDevReady } from '@remix-run/node'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createRequestHandler } from '@remix-run/express'
+import { broadcastDevReady, type ServerBuild } from '@remix-run/node'
 import { ip as ipAddress } from 'address'
 import chalk from 'chalk'
 import closeWithGrace from 'close-with-grace'
@@ -76,25 +75,25 @@ app.use(morgan('tiny'))
 // rate limiting because playwright tests are very fast and we don't want to
 // have to wait for the rate limit to reset between tests.
 const maxMultiple = process.env.TESTING ? 10_000 : 1
-
-// general rate limit for get requests
 const rateLimitDefault = {
 	windowMs: 60 * 1000,
 	max: 1000 * maxMultiple,
 	standardHeaders: true,
 	legacyHeaders: false,
 }
-// - strongestRateLimit with 10 per minute. Applies to non-GET requests to /signup
+
 const strongestRateLimit = rateLimit({
 	...rateLimitDefault,
+	windowMs: 60 * 1000,
 	max: 10 * maxMultiple,
 })
-// - strongRateLimit with 100 per minute. Applies to other non-GET requests
+
 const strongRateLimit = rateLimit({
 	...rateLimitDefault,
+	windowMs: 60 * 1000,
 	max: 100 * maxMultiple,
 })
-// - generalRateLimit with 1000 per minute. Applies to everything else.
+
 const generalRateLimit = rateLimit(rateLimitDefault)
 app.use((req, res, next) => {
 	const strongPaths = ['/signup']
@@ -108,23 +107,12 @@ app.use((req, res, next) => {
 	return generalRateLimit(req, res, next)
 })
 
-app.use((_, res, next) => {
-	res.locals.cspNonce = crypto.randomBytes(16).toString('hex')
-	next()
-})
-
-function getRequestHandler(build: ServerBuild): RequestHandler {
-	function getLoadContext(_: unknown, res: any) {
-		return { cspNonce: res.locals.cspNonce }
-	}
-	return createRequestHandler({ build, mode: MODE, getLoadContext })
-}
-
 app.all(
 	'*',
 	process.env.NODE_ENV === 'development'
-		? (...args) => getRequestHandler(devBuild)(...args)
-		: getRequestHandler(build),
+		? (...args) =>
+				createRequestHandler({ build: devBuild, mode: MODE })(...args)
+		: createRequestHandler({ build, mode: MODE }),
 )
 
 const desiredPort = Number(process.env.PORT || 3000)
@@ -194,7 +182,22 @@ if (process.env.NODE_ENV === 'development') {
 		.on('add', reloadBuild)
 		.on('change', reloadBuild)
 
+	// this ensures that when you click "Set to playground" prisma disconnects from
+	// the database if it gets deleted.
+	const dbWatcher = chokidar.watch(
+		path.join(dirname, '../prisma/data.db').replace(/\\/g, '/'),
+		{ ignoreInitial: true },
+	)
+	let timeout: ReturnType<typeof setTimeout>
+	dbWatcher.on('change', () => {
+		clearTimeout(timeout)
+		timeout = setTimeout(async () => {
+			const { prisma } = await import('#app/utils/db.server.ts')
+			prisma.$disconnect()
+		}, 300)
+	})
 	closeWithGrace(async () => {
 		await buildWatcher.close()
+		await dbWatcher.close()
 	})
 }

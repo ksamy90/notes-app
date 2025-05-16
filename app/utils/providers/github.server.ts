@@ -61,12 +61,14 @@ export class GitHubProvider implements AuthProvider {
 		connectionSession.set('oauth2:state', state)
 		const code = 'MOCK_GITHUB_CODE_KODY'
 		const searchParams = new URLSearchParams({ code, state })
-		console.log(searchParams)
-		throw redirect(`/auth/github/callback?${searchParams}`, {
-			headers: {
-				'set-cookie':
-					await connectionSessionStorage.commitSession(connectionSession),
+		throw redirect(
+			`http://localhost:3000/auth/github/callback?${searchParams}`,
+			{
+				headers: {
+					'set-cookie':
+						await connectionSessionStorage.commitSession(connectionSession),
+				},
 			},
-		})
+		)
 	}
 }

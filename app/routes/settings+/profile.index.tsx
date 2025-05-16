@@ -54,13 +54,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 		},
 	})
 
-	// 🐨 determine whether the user has 2fa by checking for a verification and
-	// by the type twoFAVerificationType and the target being the userId.
-	// 🐨 Set isTwoFAEnabled to true if it exists.
 	const twoFactorVerification = await prisma.verification.findUnique({
 		select: { id: true },
 		where: { target_type: { type: twoFAVerificationType, target: userId } },
 	})
+
 	return json({ user, isTwoFAEnabled: Boolean(twoFactorVerification) })
 }
 
@@ -145,6 +143,11 @@ export default function EditUserProfile() {
 				<div>
 					<Link to="password">
 						<Icon name="dots-horizontal">Change Password</Icon>
+					</Link>
+				</div>
+				<div>
+					<Link to="connections">
+						<Icon name="link-2">Manage connections</Icon>
 					</Link>
 				</div>
 				<div>
